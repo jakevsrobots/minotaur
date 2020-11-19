@@ -1,8 +1,9 @@
 # pet minotaur
 
-a small engine for first person labyrinth games in html with stories powered by inkjs.
+a small engine for first person maze games in the browser, with stories powered by inkjs.
 
-inkjs is a javascript port of ink by inkle studios. 
+## acknowledgements
 
-this project also relies on the parsimmon parser library by 
-  https://github.com/jneen/parsimmon
+inkjs is a javascript port by yannick lohse of ink by inkle studios. https://github.com/y-lohse/inkjs
+
+this project also uses the parsimmon parser library. https://github.com/jneen/parsimmon

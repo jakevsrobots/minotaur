@@ -1,25 +1,23 @@
 <!--
 pet minotaur, version 0. 
 
-edit the text within the <script> tags below
+edit the text in the <script> tags below.
 -->
-<!doctype html><meta charset="utf-8"><html><head><title>pet minotaur</title></head><body>the minotaur is missing ...</body>
+<!doctype html><meta charset="utf-8"><html><head><title>pet minotaur</title></head><body>the minotaur is missing ...<div id="test-result"></div></body>
 <script type="text/minotaur-maps">
-  // START writing your maps here
-  MAP "start"
+  !MAP "start"
   ########
   #    2 #
   #      #
   #  1   #
   ########
-  END
+  !END
 
-  KEY "start"
+  !KEY "start"
   1 start
   2 minotaur
   # wall
-  END
-  // STOP writing your maps here.
+  !END
 </script>
 
 <script type="text/ink">
@@ -31,7 +29,7 @@ edit the text within the <script> tags below
 
   = minotaur
   # image: Minotaur.jng
-  "hi!" they say, "i'm the minotaur."
+  "oooOOooOOOoo," they say.
 
   = wall
   # image: stone-wall-texture.jpg
@@ -51,31 +49,27 @@ pm.Maze = function() {
 };
 
 pm.Maze.prototype.findAndParse = function() {
+  for (let s of document.scripts) {
+    if (s.type == "text/minotaur-maps") {
+      let code = s.innerText;
+      let v = pm.parser().maze.tryParse(code);
+      console.log(v);
+      break;
+    }
+  }
 };
 
-pm.make_maze = function() {
+pm.Maze.prototype.play = function() {
+};
+
+// -------------------------------
+// #main
+// -------------------------------
+pm.main = function() {
   let m = new pm.Maze();
   m.findAndParse();
   m.play();
 };
-
-/*
-sample code:
-
-MAP "start"
-########
-#    2 #
-#      #
-#  1   #
-########
-END
-
-KEY "start"
-1 start
-2 minotaur
-# wall
-END
-*/
 
 // -------------------------------
 // #parser
@@ -84,8 +78,9 @@ pm.parser = function() {
   let P = window.Parsimmon;
 
   let lang = P.createLanguage({
-    kwMap: () => P.regexp(/\bMAP\b/).node("map"),
-    kwEnd: () => P.regexp(/\bEND\b/).node("end"),
+    kwMap: () => P.string("!MAP"),
+    kwKey: () => P.string("!KEY"),
+    kwEnd: () => P.string("!END"),
 
     emptyLine: (r) => r.__.then(P.end),
     blankLines: (r) => P.alt(P.newline, r.emptyLine).atLeast(1),
@@ -93,6 +88,8 @@ pm.parser = function() {
       .atLeast(1).desc("required space"),
     _: (r) => P.regexp(/[ \t]+/)
       .many().desc("optional space"),
+
+    tileSymbol: () => P.regexp(/[^!\n\r]/),
 
     quotedString: (r) => P.alt(P.string("'"), P.string('"'))
       .chain(function(open) {
@@ -102,56 +99,60 @@ pm.parser = function() {
                 .skip(P.string(open));
       }),
 
-    startMap: (r) => P.seqMap(
-      r._,
-      r.kwMap,
-      r.__,
-      r.quotedString,
-      r._,
+    endBlock: (r) => r._.then(r.kwEnd)
+      .skip(r._).skip(P.end),
 
-      (s, kw, s2, name, s3) => name
-    ),
+    startMap: (r) => 
+      P.seq(
+        r._,
+        r.kwMap,
+        r.__)
+      .then(r.quotedString)
+      .skip(r._)
+      .skip(P.newline),
 
-    mapCell: (r) => P.regexp(/[^\r\n]/),
-    mapRow: (r) => r.mapCell.atLeast(1).skip(P.end),
+    mapCell: (r) => P.alt(r.tileSymbol, P.string(" ")),
+    mapRow: (r) => r.mapCell.atLeast(1).skip(P.newline),
 
-    map: (r) => r.mapRow.atLeast(1)
-      .map(function(rows) {
-        // gather all the cells from each row and create the grid
-      }),
+    map: (r) => r.mapRow.atLeast(1),
 
-    mapBlock: (r) => P.seqMap(
-      r.startMap,
-      r.map,
-      r.endMap,
-
-      (name, map, end) =>
-        { name: name, tiles: map }
+    // test: testParseMapBlock
+    mapBlock: (r) => P.seqObj(
+      ["name", r.startMap],
+      ["tiles", r.map],
+      r.endBlock
     ).node("mapBlock"),
 
-    keyBlock: (r) => P.seqMap(
-      r.startKey,
-      r.key,
-      r.endKey,
+    startKey: (r) => 
+      P.seq(
+        r._,
+        r.kwKey,
+        r.__)
+      .then(r.quotedString)
+      .skip(r._)
+      .skip(P.newline),
 
-      (name, key, end) =>
-        { name: name, tiles: key }
+    key: (r) => P.seqObj(
+      r._,
+      ["symbol", r.tileSymbol],
+      r.__,
+      ["value", P.takeWhile(c => c != "\n" && c != "\r")],
+      P.newline).atLeast(1),
+
+    keyBlock: (r) => P.seqObj(
+      ["name", r.startKey],
+      ["tiles", r.key],
+      r.endBlock
     ).node("keyBlock"),
 
-    // test: parseMaze
-    maze: (r) => P.alt(r.keyBlock, r.mapBlock, r.blankLines)
-      .many()
+    // test: testParseMaze
+    maze: (r) => P.alt(
+      r.keyBlock.trim(r.blankLines.fallback()), 
+      r.mapBlock.trim(r.blankLines.fallback())
+    ).atLeast(1)
   });
 
   return lang;
-};
-
-// -------------------------------
-// #main
-// -------------------------------
-pm.main = function() {
-  console.log("view source");
-  pm.make_maze();
 };
 
 // TinyTest is by Joe Walnes. I made minor modifications.
@@ -225,22 +226,36 @@ pm.runTests = function() {
     // -------------------------------
     // Parser tests
     // -------------------------------
-    "parseMaze": function() {
-      // write your maps here.
-      let code = `
-        MAP "start"
+    "testParseMapBlock": function() {
+      let code = 
+       `!MAP "start"
         ########
         #    2 #
         #      #
         #  1   #
         ########
-        END
+        !END`;
 
-        KEY "start"
+      let p = pm.parser().maze;
+      let v = p.tryParse(code);
+      console.log(v);
+    },
+
+    "testParseMaze": function() {
+      // write your maps here.
+      let code = `!MAP "start"
+        ########
+        #    2 #
+        #      #
+        #  1   #
+        ########
+        !END
+
+        !KEY "start"
         1 start
         2 minotaur
         # wall
-        END`;
+        !END`;
 
         let p = pm.parser().maze;
         let v = p.tryParse(code);
@@ -1710,8 +1725,9 @@ return Parsimmon;
 })();
 </script>
 
-  <script type="text/javascript">
-    pm.runTests();
-    pm.main();
-  </script>
+<script type="text/javascript">
+  console.log("pet minotaur version " + pm.version + ". view source.");
+  pm.runTests();
+  pm.main();
+</script>
 </html>
