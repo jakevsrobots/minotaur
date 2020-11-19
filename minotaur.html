@@ -10,8 +10,11 @@ edit the map and ink scripts in the <script> tags below.
 <!-- ----------------------------------------- -->
 <script type="text/minotaur-maps">
   !MAP "start"
-  ########
-  #    2 #
+       ########
+       #    2 #
+       #      #
+  ######      #
+  # *     #####
   #      #
   #  1   #
   ########
@@ -19,8 +22,9 @@ edit the map and ink scripts in the <script> tags below.
 
   !KEY "start"
   1 start, walkable
-  2 minotaur, bumpable, image: "Minotaur.jpg"
-  # wall
+  2 minotaur, bumpable, sprite: "img/Minotaur.jpg"
+  # wall, color: 0x8833aa, bumpable, texture: "img/stone-wall-texture.jpg"
+  * light, light: point 0x39FF14
   !END
 
   !OPTIONS "start"
@@ -40,11 +44,10 @@ edit the map and ink scripts in the <script> tags below.
   welcome to the dungeon.
 
   = minotaur
-  # image: Minotaur.jpg
   "oooOOooOOOoo," they say.
 
   = wall
-  # image: stone-wall-texture.jpg
+  ouch.
 </script>
 
 <style type="text/css">
@@ -68,6 +71,22 @@ pm.options = {
   FLOOR_COLOR: Symbol("floor color")
 };
 
+pm.flags = {
+  BUMPABLE: Symbol("bumpable"),
+  WALKABLE: Symbol("walkable"),
+  IMAGE: Symbol("image"),
+  SPRITE: Symbol("sprite"),
+  LIGHT: Symbol("light"),
+  COLOR: Symbol("color")
+};
+
+pm.keys = {
+  UP: Symbol("up"),
+  DOWN: Symbol("down"),
+  LEFT: Symbol("left"),
+  RIGHT: Symbol("right"),
+};
+
 pm.default = function(optSymbol) {
   switch (optSymbol) {
     case pm.options.SKY_COLOR:
@@ -81,7 +100,16 @@ pm.default = function(optSymbol) {
 // -------------------------------
 pm.error = function(msg) {
   throw msg;
-}
+};
+
+
+pm.cachedPlainMaterials = {};
+pm.getPlainColorMaterial = function(hexColor) {
+  if (!(hexColor in pm.cachedPlainMaterials))
+    pm.cachedPlainMaterials[hexColor] = new THREE.MeshPhongMaterial({color: hexColor});
+
+  return pm.cachedPlainMaterials[hexColor];
+};
 
 // -------------------------------
 // #map -- obj representing a map
@@ -97,6 +125,16 @@ pm.Map.prototype.getOption = function(optSymbol) {
     return pm.default(optSymbol);
 };
 
+pm.Map.prototype.hasFlag = function(tile, flag) {
+  return this.key[tile]
+    .flags.some(x => x.type == flag);
+};
+
+pm.Map.prototype.getFlag = function(tile, flag) {
+  return this.key[tile]
+    .flags.find(x => x.type == flag);
+};
+
 // -------------------------------
 // #maze -- the main runtime class
 // -------------------------------
@@ -106,10 +144,11 @@ pm.Maze = function() {
 
 pm.Maze.prototype.buildMaze = function() {
   for (let s of document.scripts) {
-    console.log(s);
     if (s.type == "text/minotaur-maps") {
       let code = s.innerText;
       let data = pm.parser().maze.tryParse(code);
+
+      console.log("compiled data", data);
       
       let mapName;
 
@@ -122,10 +161,8 @@ pm.Maze.prototype.buildMaze = function() {
           this.maps[mapName].key = block.value.tiles;
         else if (block.name == "mapBlock")
           this.maps[mapName].map = block.value.tiles;
-        else if (block.name == "optionsBlock") {
-          console.log("o", block.value.options);
+        else if (block.name == "optionsBlock") 
           this.maps[mapName].options = block.value.options;
-        }
       }
 
       break;
@@ -145,22 +182,70 @@ pm.Maze.prototype.enterMap = function(m) {
   this.scene = new THREE.Scene();
   this.scene.background = new THREE.Color(Number(m.getOption(pm.options.SKY_COLOR)));
 
+  let width = 640;
+  let height = 480;
+
   this.camera = new THREE.PerspectiveCamera(
     75, // fov 
-    window.innerWidth / window.innerHeight, // aspect
+    width / height, // aspect
     0.1, // near clip 
     1000); // far clip
   this.renderer = new THREE.WebGLRenderer();
-  this.renderer.setSize(window.innerWidth, window.innerHeight);
+  this.renderer.setSize(width, height);
   document.body.appendChild(this.renderer.domElement);
 
-  // test
-  for (let y = 0; y<m.length; y++) {
-    for (let x = 0; x<m[y].length; x++) {
-      // todo
+  // construct the maze
+  console.log("key", m.key);
+  console.log("map", m.map);
+  
+  let bg = new THREE.BoxGeometry();
+  for (let y = 0; y<m.map.length; y++) {
+    for (let x = 0; x<m.map[y].length; x++) {
+      let cell = m.map[y][x];
+
+      // blank tile
+      if (cell.tile == " ") 
+        continue
+
+      let tileData = m.key[cell.tile];
+
+      if (m.hasFlag(cell.tile, pm.flags.COLOR)) {
+        let hexColor = m.getFlag(cell.tile, pm.flags.COLOR).color;
+        let mat = pm.getPlainColorMaterial(hexColor);
+        let box = new THREE.Mesh(bg, mat);
+        box.position.set(x, 0, y);
+        cell.mesh = box;
+        this.scene.add(box);
+      }
+
+      if (m.hasFlag(cell.tile, pm.flags.LIGHT)) {
+        let f = m.getFlag(cell.tile, pm.flags.LIGHT);
+        let light;
+
+        switch (f.lightType) {
+          case "point":
+            light = new THREE.PointLight(f.color);
+            break;
+          case "directional":
+            light = new THREE.DirectionalLight(f.color);
+            break;
+          case "hemisphere":
+            light = new THREE.HemisphereLight(f.color, f.secondaryColor);
+            break;
+        }
+
+        this.scene.add(light);
+      }
+
+      if (m.key[cell.tile].name == "start") {
+        this.camera.position.set(5,1,5);
+      }
     }
   }
 
+  console.log(this.scene);
+
+  /*
   let bGeo = new THREE.BoxGeometry();
   let fGeo = new THREE.PlaneGeometry();
   let mat = new THREE.MeshPhongMaterial( {color: 0xf81894} );
@@ -174,27 +259,45 @@ pm.Maze.prototype.enterMap = function(m) {
   this.floor.rotation.set(-Math.PI/2, 0, 0);
   this.floor.position.set(0,-2,0);
   this.scene.add(this.floor);
+*/
 
-  this.light = new THREE.DirectionalLight(0xffffff, 1);
-  this.light.position.set(0,1,0);
-  this.light.target.position.set(5,0,0);
-  this.scene.add(this.light);
+  let light = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.8);
+  this.scene.add(light);
 
-  this.camera.position.set(5,1,5);
-  this.camera.lookAt(0,0,0);
+  this.camera.position.set(0,0,0);
+  //this.camera.lookAt(0,0,0);
 
   this.animate();
 };
 
 pm.Maze.prototype.animate = function() {
+  /*
   this.box.rotation.y += 0.02;
   this.box.rotation.z += 0.03;
   this.box.rotation.x += 0.05;
+  */
 
   //this.floor.rotation.x -= 0.1;
 
   requestAnimationFrame(this.animate.bind(this));
   this.renderer.render(this.scene, this.camera);
+};
+
+pm.Maze.prototype.move = function(direction) {
+  switch (direction) {
+    case pm.keys.UP:
+      this.camera.translateZ(-1);
+      break;
+    case pm.keys.DOWN:
+      this.camera.translateZ(1);
+      break;
+    case pm.keys.LEFT:
+      this.camera.rotateY(Math.PI/2);
+      break;
+    case pm.keys.RIGHT:
+      this.camera.rotateY(-Math.PI/2);
+      break;
+  }
 };
 
 // -------------------------------
@@ -203,9 +306,30 @@ pm.Maze.prototype.animate = function() {
 pm.main = function() {
   let noload = document.getElementById("noload");
   noload.parentNode.removeChild(noload);
-  let m = new pm.Maze();
-  m.buildMaze();
-  m.play();
+
+  document.addEventListener("keydown", pm.keydown, false);
+
+  pm.liveMaze = new pm.Maze();
+  pm.liveMaze.buildMaze();
+  pm.liveMaze.play();
+};
+
+pm.keydown = function(event) {
+  let keycode = event.which;
+  switch (keycode) {
+    case 38:
+      pm.liveMaze.move(pm.keys.UP);
+      break;
+    case 40:
+      pm.liveMaze.move(pm.keys.DOWN);
+      break;
+    case 37:
+      pm.liveMaze.move(pm.keys.LEFT);
+      break;
+    case 39:
+      pm.liveMaze.move(pm.keys.RIGHT);
+      break;
+  }
 };
 
 // -------------------------------
@@ -238,6 +362,9 @@ pm.parser = function() {
                 .skip(P.string(open));
       }),
 
+    hexColor: () => P.regexp(/0x[a-f0-9]{6}/i)
+      .map(x => ({type: pm.flags.COLOR, color: Number(x)})),
+
     endBlock: (r) => r._.then(r.kwEnd)
       .skip(r._).skip(P.end),
 
@@ -250,7 +377,8 @@ pm.parser = function() {
       .skip(r._)
       .skip(P.newline),
 
-    mapCell: (r) => P.alt(r.tileSymbol, P.string(" ")),
+    mapCell: (r) => P.alt(r.tileSymbol, P.string(" "))
+      .map(x => ({tile: x})),
     mapRow: (r) => r.mapCell.atLeast(1).skip(P.newline),
 
     map: (r) => r.mapRow.atLeast(1),
@@ -271,12 +399,64 @@ pm.parser = function() {
       .skip(r._)
       .skip(P.newline),
 
-    key: (r) => P.seqObj(
+    key: (r) => 
+      P.seqObj(
+        r._,
+        ["symbol", r.tileSymbol],
+        r.__,
+        ["name", P.takeWhile(c => "\n\r,".indexOf(c) == -1)],
+        r._,
+        ["flags", P.string(",").skip(r._).then(r.flagList).fallback([])],
+        P.newline)
+      .atLeast(1)
+      .map(function(x) {
+        let key = {};
+        for (let entry of x) {
+          key[entry.symbol] = entry;
+        }
+        return key;
+      }),
+
+    imageLinkFlag: (r) => P.seqMap(
+      P.alt(P.string("texture"), P.string("sprite")),
       r._,
-      ["symbol", r.tileSymbol],
-      r.__,
-      ["value", P.takeWhile(c => c != "\n" && c != "\r")],
-      P.newline).atLeast(1),
+      P.string(":"),
+      r._,
+      r.quotedString,
+
+      (type,s1,c,s2,url) => ({type: pm.flags.IMAGE, url: url, displayType: type })
+    ),
+
+    colorFlag: (r) => P.seq(
+      P.string("color"),
+      r._,
+      P.string(":"),
+      r._)
+    .then(r.hexColor),
+
+    lightFlag: (r) => P.seqObj(
+      P.string("light"),
+      r._,
+      P.string(":"),
+      r._,
+      ["lightType", P.alt(
+        P.string("point"), 
+        P.string("directional"), 
+        P.string("hemisphere"))],
+      r._,
+      ["color", r.hexColor],
+      ["secondaryColor", r.hexColor.trim(r._).fallback()]
+    ).map(x => Object.assign(x, {type: pm.flags.LIGHT})),
+
+    flag: (r) => P.alt(
+      P.string("walkable").result({type: pm.flags.WALKABLE}),
+      P.string("bumpable").result({type: pm.flags.BUMPABLE}),
+      r.imageLinkFlag,
+      r.colorFlag,
+      r.lightFlag
+    ),
+
+    flagList: (r) => r.flag.trim(r._).sepBy1(P.string(",")),
 
     keyBlock: (r) => P.seqObj(
       ["name", r.startKey],
@@ -419,7 +599,6 @@ pm.runTests = function() {
 
       let p = pm.parser().maze;
       let v = p.tryParse(code);
-      console.log(v);
     },
 
     "testParseMaze": function() {
@@ -440,7 +619,6 @@ pm.runTests = function() {
 
         let p = pm.parser().maze;
         let v = p.tryParse(code);
-        console.log(v);
       }
     });
 };
