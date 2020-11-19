@@ -42,34 +42,52 @@ const pm = {
   version: 0
 };
 
+
+// -------------------------------
+// #maze -- the main runtime class
+// -------------------------------
 pm.Maze = function() {
+  this.maps = {};
+  this.keys = {};
 };
 
-pm.Maze.prototype.findAndParse = function() {
+pm.Maze.prototype.buildMaze = function() {
   for (let s of document.scripts) {
     if (s.type == "text/minotaur-maps") {
       let code = s.innerText;
-      let v = pm.parser().maze.tryParse(code);
-      console.log(v);
+      let data = pm.parser().maze.tryParse(code);
+
+      for (let keyBlock of data.filter(x => x.name == "keyBlock")) 
+        keys[keyBlock.value.name] = keyBlock.value.tiles;
+
+      for (let mapBlock of data.filter(x => x.name == "mapBlock")) 
+        maps[mapBlock.value.name] = mapBlock.value.tiles;
+
       break;
     }
   }
 };
 
 pm.Maze.prototype.play = function() {
+  if ("start" in this.maps) {
+    this.loadMap(this.maps["start"]);
+  } else {
+    pm.error("you must name at least one map 'start'");
+  }
 };
 
 // -------------------------------
-// #main
+// #main -- entry point
 // -------------------------------
 pm.main = function() {
   let m = new pm.Maze();
-  m.findAndParse();
+  m.buildMaze();
   m.play();
 };
 
 // -------------------------------
-// #parser
+// #parser -- transform markup into 
+//            maps and keys
 // -------------------------------
 pm.parser = function() {
   let P = window.Parsimmon;

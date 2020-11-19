@@ -2,7 +2,7 @@
 
 a small engine for first person maze games in the browser, with stories powered by inkjs.
 
-## acknowledgements
+## credits
 
 inkjs is a javascript port by yannick lohse of ink by inkle studios. https://github.com/y-lohse/inkjs
 
