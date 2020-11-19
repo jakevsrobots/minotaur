@@ -1,42 +1,46 @@
+<!--
+pet minotaur, version 0. 
+
+edit the text within the <script> tags below
+-->
 <!doctype html><meta charset="utf-8"><html><head><title>pet minotaur</title></head><body>the minotaur is missing ...</body>
+<script type="text/minotaur-maps">
+  // START writing your maps here
+  MAP "start"
+  ########
+  #    2 #
+  #      #
+  #  1   #
+  ########
+  END
 
-  <script type="text/minotaur-maps">
-    // write your maps here.
-    MAP "start"
-    ########
-    #    2 #
-    #      #
-    #  1   #
-    ########
-    END
+  KEY "start"
+  1 start
+  2 minotaur
+  # wall
+  END
+  // STOP writing your maps here.
+</script>
 
-    KEY "start"
-    1 start
-    2 minotaur
-    # wall
-    END
-    // stop writing your maps here.
-  </script>
+<script type="text/ink">
+  // START writing your ink script here.
+  === start
 
-  <script type="text/ink">
-    // write your ink script here.
-    === start
+  = start
+  welcome to the dungeon.
 
-    = start
-    welcome to the dungeon.
+  = minotaur
+  # image: Minotaur.jng
+  "hi!" they say, "i'm the minotaur."
 
-    = minotaur
-    # image: Minotaur.jng
-    "hi!" they say, "i'm the minotaur."
+  = wall
+  # image: stone-wall-texture.jpg
 
-    = wall
-    # image: stone-wall-texture.jpg
+  // STOP writing your ink script here.
+</script>
 
-    // stop your ink script here.
-  </script>
-
-  <!-- the main code for pet minotaur lives here -->
-  <script type="text/javascript">
+<!-- the main code for pet minotaur lives here -->
+<script type="text/javascript">
 "use strict";
 
 const pm = {
@@ -58,7 +62,6 @@ pm.make_maze = function() {
 /*
 sample code:
 
-// write your maps here.
 MAP "start"
 ########
 #    2 #
@@ -72,9 +75,11 @@ KEY "start"
 2 minotaur
 # wall
 END
-
-// stop writing your maps here.
 */
+
+// -------------------------------
+// #parser
+// -------------------------------
 pm.parser = function() {
   let P = window.Parsimmon;
 
@@ -82,15 +87,77 @@ pm.parser = function() {
     kwMap: () => P.regexp(/\bMAP\b/).node("map"),
     kwEnd: () => P.regexp(/\bEND\b/).node("end"),
 
-    // main
-    maze: (r) => P ... todo
+    emptyLine: (r) => r.__.then(P.end),
+    blankLines: (r) => P.alt(P.newline, r.emptyLine).atLeast(1),
+    __: (r) => P.regexp(/[ \t]+/)
+      .atLeast(1).desc("required space"),
+    _: (r) => P.regexp(/[ \t]+/)
+      .many().desc("optional space"),
+
+    quotedString: (r) => P.alt(P.string("'"), P.string('"'))
+      .chain(function(open) {
+        return P.takeWhile(c => c !== open && 
+                                c != "\r" && 
+                                c != "\n")
+                .skip(P.string(open));
+      }),
+
+    startMap: (r) => P.seqMap(
+      r._,
+      r.kwMap,
+      r.__,
+      r.quotedString,
+      r._,
+
+      (s, kw, s2, name, s3) => name
+    ),
+
+    mapCell: (r) => P.regexp(/[^\r\n]/),
+    mapRow: (r) => r.mapCell.atLeast(1).skip(P.end),
+
+    map: (r) => r.mapRow.atLeast(1)
+      .map(function(rows) {
+        // gather all the cells from each row and create the grid
+      }),
+
+    mapBlock: (r) => P.seqMap(
+      r.startMap,
+      r.map,
+      r.endMap,
+
+      (name, map, end) =>
+        { name: name, tiles: map }
+    ).node("mapBlock"),
+
+    keyBlock: (r) => P.seqMap(
+      r.startKey,
+      r.key,
+      r.endKey,
+
+      (name, key, end) =>
+        { name: name, tiles: key }
+    ).node("keyBlock"),
+
+    // test: parseMaze
+    maze: (r) => P.alt(r.keyBlock, r.mapBlock, r.blankLines)
+      .many()
   });
+
+  return lang;
+};
+
+// -------------------------------
+// #main
+// -------------------------------
+pm.main = function() {
+  console.log("view source");
+  pm.make_maze();
 };
 
 // TinyTest is by Joe Walnes. I made minor modifications.
 // TinyTest is under MIT License. See https://github.com/joewalnes/jstinytest/
 
-roog.TinyTest = {
+pm.TinyTest = {
 
   run: function(tests) {
     let failures = 0;
@@ -146,42 +213,42 @@ roog.TinyTest = {
 // #tests
 // -------------------------------
 pm.runTests = function() {
-const fail                = roog.TinyTest.fail,
-  assert              = roog.TinyTest.assert,
-  assertEquals        = roog.TinyTest.assertEquals,
-  eq                  = roog.TinyTest.assertEquals, // alias for assertEquals
-  assertStrictEquals  = roog.TinyTest.assertStrictEquals,
-  tests               = roog.TinyTest.run,
-  log                 = console.log;
+  const fail                = pm.TinyTest.fail,
+        assert              = pm.TinyTest.assert,
+        assertEquals        = pm.TinyTest.assertEquals,
+        eq                  = pm.TinyTest.assertEquals, // alias for assertEquals
+        assertStrictEquals  = pm.TinyTest.assertStrictEquals,
+        tests               = pm.TinyTest.run,
+        log                 = console.log;
 
-tests({
-  // -------------------------------
-  // Parser tests
-  // -------------------------------
+  tests({
+    // -------------------------------
+    // Parser tests
+    // -------------------------------
+    "parseMaze": function() {
+      // write your maps here.
+      let code = `
+        MAP "start"
+        ########
+        #    2 #
+        #      #
+        #  1   #
+        ########
+        END
 
-  "parserWorkout": function() {
-    // write your maps here.
-    let code = `MAP "start"
-    ########
-    #    2 #
-    #      #
-    #  1   #
-    ########
-    END
+        KEY "start"
+        1 start
+        2 minotaur
+        # wall
+        END`;
 
-    KEY "start"
-    1 start
-    2 minotaur
-    # wall
-    END`;
-
-    let p = pm.parser().maze;
-    let v = p.tryParse(code);
-
-    // stop writing your maps here.
-  }
-});
-  </script>
+        let p = pm.parser().maze;
+        let v = p.tryParse(code);
+        console.log(v);
+      }
+    });
+};
+</script>
 
   <!-- Ink.js by Yannick Lohse, a port of Ink by Inkle Studios, available at https://github.com/y-lohse/inkjs/ -->
   <script type="text/javascript">
@@ -1644,7 +1711,7 @@ return Parsimmon;
 </script>
 
   <script type="text/javascript">
-pm.runTest();
-pm.main();
+    pm.runTests();
+    pm.main();
   </script>
 </html>

@@ -1,4 +1,4 @@
-Pet Minotaur is by Jake Elliott -- https://github.com/jakevsrobots/Pet-Minotaur
+pet minotaur is by jake elliott -- https://github.com/jakevsrobots/minotaur
 
 Copy-it-right, circa 2020
 
@@ -50,7 +50,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-Parsimmon is by J. Adkisson -- https://github.com/jneen/parsimmon
+Parsimmon is by Jeanine Adkisson and Han Seoul-Oh
+  https://github.com/jneen/parsimmon
 
 MIT license.  See http://www.opensource.org/licenses/mit-license.php
 
