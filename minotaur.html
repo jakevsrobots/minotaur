@@ -11,21 +11,23 @@ edit the map and ink scripts in the <script> tags below.
 <script type="text/minotaur-maps">
   !MAP "start"
        ########
-       #*     #
+       #* M   #
        # #  # #
        #      #
        # #  # #
   ######    * #
   # *     #####
 ###   #  #
-#1       #
+#1      ?#
 ##########
   !END
 
   !KEY "start"
   1 start
-  # brick, wall, color: 0x8833aa
-  * light, light: point 0x39FF14
+  # brick, wall, box: 0x8833aa
+  * torch, light: point 0x39FF14
+  ? lantern, light: point 0xff0034
+  M minotaur, sprite: "img/Minotaur.jpg"
   !END
 
   !OPTIONS "start"
@@ -78,7 +80,7 @@ pm.flags = {
   IMAGE: Symbol("image"),
   SPRITE: Symbol("sprite"),
   LIGHT: Symbol("light"),
-  COLOR: Symbol("color")
+  BOX: Symbol("box")
 };
 
 pm.keys = {
@@ -281,7 +283,7 @@ pm.Maze.prototype.enterMap = function(m) {
     this.player = new pm.Player(m);
 
   this.camera = new THREE.PerspectiveCamera(
-    75, // fov 
+    60, // fov 
     width / height, // aspect
     0.1, // near clip 
     1000); // far clip
@@ -304,8 +306,10 @@ pm.Maze.prototype.enterMap = function(m) {
 
       let tileData = m.key[cell.tile];
 
-      if (m.hasFlag(cell.tile, pm.flags.COLOR)) {
-        let hexColor = m.getFlag(cell.tile, pm.flags.COLOR).color;
+      if (m.hasFlag(cell.tile, pm.flags.BOX)) {
+        console.log("box");
+        let f = m.getFlag(cell.tile, pm.flags.BOX);
+        let hexColor = f.color;
         let mat = pm.getPlainColorMaterial(hexColor);
         let box = new THREE.Mesh(bg, mat);
         box.position.set(x, 0, y);
@@ -501,7 +505,7 @@ pm.parser = function() {
       }),
 
     hexColor: () => P.regexp(/0x[a-f0-9]{6}/i)
-      .map(x => ({type: pm.flags.COLOR, color: Number(x)})),
+      .map(x => Number(x)),
 
     endBlock: (r) => r._.then(r.kwEnd)
       .skip(r._).skip(P.end),
@@ -580,12 +584,13 @@ pm.parser = function() {
       (type,s1,c,s2,url) => ({type: pm.flags.IMAGE, url: url, displayType: type })
     ),
 
-    colorFlag: (r) => P.seq(
-      P.string("color"),
+    boxFlag: (r) => P.seq(
+      P.string("box"),
       r._,
       P.string(":"),
       r._)
-    .then(r.hexColor),
+    .then(r.hexColor)
+    .map(x => ({type: pm.flags.BOX, color: x})),
 
     lightFlag: (r) => P.seqObj(
       P.string("light"),
@@ -605,7 +610,7 @@ pm.parser = function() {
       P.string("wall").result({type: pm.flags.WALL}),
       P.string("bumpable").result({type: pm.flags.BUMPABLE}),
       r.imageLinkFlag,
-      r.colorFlag,
+      r.boxFlag,
       r.lightFlag
     ),
 
