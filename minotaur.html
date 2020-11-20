@@ -430,13 +430,11 @@ pm.Player.prototype.stepBack = function() {
 
 pm.Player.prototype.turnLeft = function() {
   this.dir = pm.dirLeft(this.dir);
-  console.log(this.dir);
   this.root.rotateY(Math.PI/2);
 };
 
 pm.Player.prototype.turnRight = function() {
   this.dir = pm.dirRight(this.dir);
-  console.log(this.dir);
   this.root.rotateY(-Math.PI/2);
 };
 
