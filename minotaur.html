@@ -11,19 +11,20 @@ edit the map and ink scripts in the <script> tags below.
 <script type="text/minotaur-maps">
   !MAP "start"
        ########
-       #    2 #
+       #*     #
+       # #  # #
        #      #
-  ######      #
+       # #  # #
+  ######    * #
   # *     #####
-  #      #
-  #  1   #
-  ########
+###   #  #
+#1       #
+##########
   !END
 
   !KEY "start"
-  1 start, walkable
-  2 minotaur, bumpable, sprite: "img/Minotaur.jpg"
-  # wall, color: 0x8833aa, bumpable, texture: "img/stone-wall-texture.jpg"
+  1 start
+  # brick, wall, color: 0x8833aa
   * light, light: point 0x39FF14
   !END
 
@@ -46,7 +47,7 @@ edit the map and ink scripts in the <script> tags below.
   = minotaur
   "oooOOooOOOoo," they say.
 
-  = wall
+  = brick
   ouch.
 </script>
 
@@ -64,7 +65,7 @@ const pm = {
 };
 
 // -------------------------------
-// #options -- map option defs
+// #constants
 // -------------------------------
 pm.options = {
   SKY_COLOR: Symbol("sky color"),
@@ -73,7 +74,7 @@ pm.options = {
 
 pm.flags = {
   BUMPABLE: Symbol("bumpable"),
-  WALKABLE: Symbol("walkable"),
+  WALL: Symbol("wall"),
   IMAGE: Symbol("image"),
   SPRITE: Symbol("sprite"),
   LIGHT: Symbol("light"),
@@ -87,6 +88,16 @@ pm.keys = {
   RIGHT: Symbol("right"),
 };
 
+pm.dir = {
+  EAST: Symbol("east"),
+  WEST: Symbol("west"),
+  SOUTH: Symbol("south"),
+  NORTH: Symbol("north")
+};
+
+// -------------------------------
+// #defaults
+// -------------------------------
 pm.default = function(optSymbol) {
   switch (optSymbol) {
     case pm.options.SKY_COLOR:
@@ -102,6 +113,75 @@ pm.error = function(msg) {
   throw msg;
 };
 
+pm.offsetPoint = function(x, y, dir) {
+  switch (dir) {
+    case pm.dir.EAST:
+      x++;
+      break;
+    case pm.dir.WEST:
+      x--;
+      break;
+    case pm.dir.NORTH:
+      y--;
+      break;
+    case pm.dir.SOUTH:
+      y++;
+      break;
+  }
+
+  return [x, y];
+};
+
+pm.flipDir = function(dir) {
+  switch (dir) {
+    case pm.dir.EAST:
+      return pm.dir.WEST;
+      break;
+    case pm.dir.WEST:
+      return pm.dir.EAST;
+      break;
+    case pm.dir.NORTH:
+      return pm.dir.SOUTH;
+      break;
+    case pm.dir.SOUTH:
+      return pm.dir.NORTH;
+      break;
+  }
+};
+
+pm.dirRight = function(dir) {
+  switch (dir) {
+    case pm.dir.EAST:
+      return pm.dir.SOUTH;
+      break;
+    case pm.dir.WEST:
+      return pm.dir.NORTH;
+      break;
+    case pm.dir.NORTH:
+      return pm.dir.EAST;
+      break;
+    case pm.dir.SOUTH:
+      return pm.dir.WEST;
+      break;
+  }
+};
+
+pm.dirLeft = function(dir) {
+  switch (dir) {
+    case pm.dir.EAST:
+      return pm.dir.NORTH;
+      break;
+    case pm.dir.WEST:
+      return pm.dir.SOUTH;
+      break;
+    case pm.dir.NORTH:
+      return pm.dir.WEST;
+      break;
+    case pm.dir.SOUTH:
+      return pm.dir.EAST;
+      break;
+  }
+};
 
 pm.cachedPlainMaterials = {};
 pm.getPlainColorMaterial = function(hexColor) {
@@ -116,6 +196,8 @@ pm.getPlainColorMaterial = function(hexColor) {
 // -------------------------------
 pm.Map = function() {
   this.options = {};
+  this.key = {};
+  this.map = {};
 };
 
 pm.Map.prototype.getOption = function(optSymbol) {
@@ -126,6 +208,9 @@ pm.Map.prototype.getOption = function(optSymbol) {
 };
 
 pm.Map.prototype.hasFlag = function(tile, flag) {
+  if (tile == " ")
+    return false;
+
   return this.key[tile]
     .flags.some(x => x.type == flag);
 };
@@ -135,11 +220,20 @@ pm.Map.prototype.getFlag = function(tile, flag) {
     .flags.find(x => x.type == flag);
 };
 
+pm.Map.prototype.hasFlagAtPoint = function(flag, x, y) {
+  return this.hasFlag(this.map[x][y].tile, flag);
+};
+
+pm.Map.prototype.checkForWall = function(x, y) {
+  return this.hasFlagAtPoint(pm.flags.WALL, x, y);
+};
+
 // -------------------------------
 // #maze -- the main runtime class
 // -------------------------------
 pm.Maze = function() {
   this.maps = {};
+  this.player = null;
 };
 
 pm.Maze.prototype.buildMaze = function() {
@@ -148,8 +242,6 @@ pm.Maze.prototype.buildMaze = function() {
       let code = s.innerText;
       let data = pm.parser().maze.tryParse(code);
 
-      console.log("compiled data", data);
-      
       let mapName;
 
       for (let block of data) {
@@ -185,23 +277,26 @@ pm.Maze.prototype.enterMap = function(m) {
   let width = 640;
   let height = 480;
 
+  if (this.player == null)
+    this.player = new pm.Player(m);
+
   this.camera = new THREE.PerspectiveCamera(
     75, // fov 
     width / height, // aspect
     0.1, // near clip 
     1000); // far clip
+  this.player.root.add(this.camera);
+  this.scene.add(this.player.root);
+  this.camera.position.set(0,-0.1,0.5);
   this.renderer = new THREE.WebGLRenderer();
   this.renderer.setSize(width, height);
   document.body.appendChild(this.renderer.domElement);
 
   // construct the maze
-  console.log("key", m.key);
-  console.log("map", m.map);
-  
   let bg = new THREE.BoxGeometry();
-  for (let y = 0; y<m.map.length; y++) {
-    for (let x = 0; x<m.map[y].length; x++) {
-      let cell = m.map[y][x];
+  for (let x = 0; x<m.map.length; x++) {
+    for (let y = 0; y<m.map[x].length; y++) {
+      let cell = m.map[x][y];
 
       // blank tile
       if (cell.tile == " ") 
@@ -237,13 +332,10 @@ pm.Maze.prototype.enterMap = function(m) {
         this.scene.add(light);
       }
 
-      if (m.key[cell.tile].name == "start") {
-        this.camera.position.set(5,1,5);
-      }
+      if (m.key[cell.tile].name == "start") 
+        this.player.warp(x, y);
     }
   }
-
-  console.log(this.scene);
 
   /*
   let bGeo = new THREE.BoxGeometry();
@@ -264,7 +356,6 @@ pm.Maze.prototype.enterMap = function(m) {
   let light = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.8);
   this.scene.add(light);
 
-  this.camera.position.set(0,0,0);
   //this.camera.lookAt(0,0,0);
 
   this.animate();
@@ -286,18 +377,67 @@ pm.Maze.prototype.animate = function() {
 pm.Maze.prototype.move = function(direction) {
   switch (direction) {
     case pm.keys.UP:
-      this.camera.translateZ(-1);
+      this.player.stepForward();
       break;
     case pm.keys.DOWN:
-      this.camera.translateZ(1);
+      this.player.stepBack();
       break;
     case pm.keys.LEFT:
-      this.camera.rotateY(Math.PI/2);
+      this.player.turnLeft();
       break;
     case pm.keys.RIGHT:
-      this.camera.rotateY(-Math.PI/2);
+      this.player.turnRight();
       break;
   }
+};
+
+// -------------------------------
+// #player -- player class
+// -------------------------------
+pm.Player = function(map) {
+  this.map = map;
+  this.x = 0;
+  this.y = 0;
+  this.dir = pm.dir.EAST;
+  this.root = new THREE.Object3D();
+  this.root.rotateY(-Math.PI/2);
+};
+
+pm.Player.prototype.warp = function(x, y) {
+  this.x = x;
+  this.y = y;
+  this.root.position.set(x, 0, y);
+};
+
+pm.Player.prototype.stepForward = function() {
+  let [x, y] = pm.offsetPoint(this.x, this.y, this.dir);
+
+  if (this.map.checkForWall(x, y)) 
+    console.log("bumped into a wall at", x, y);
+  else
+    this.warp(x, y);
+};
+
+pm.Player.prototype.stepBack = function() {
+  let [x, y] = pm.offsetPoint(
+    this.x, this.y, pm.flipDir(this.dir));
+
+  if (this.map.checkForWall(x, y)) 
+    console.log("bumped into a wall at", x, y);
+  else
+    this.warp(x, y);
+};
+
+pm.Player.prototype.turnLeft = function() {
+  this.dir = pm.dirLeft(this.dir);
+  console.log(this.dir);
+  this.root.rotateY(Math.PI/2);
+};
+
+pm.Player.prototype.turnRight = function() {
+  this.dir = pm.dirRight(this.dir);
+  console.log(this.dir);
+  this.root.rotateY(-Math.PI/2);
 };
 
 // -------------------------------
@@ -381,7 +521,22 @@ pm.parser = function() {
       .map(x => ({tile: x})),
     mapRow: (r) => r.mapCell.atLeast(1).skip(P.newline),
 
-    map: (r) => r.mapRow.atLeast(1),
+    map: (r) => r.mapRow.atLeast(1)
+      .map(function(data) {
+        // reorganize the map data so it can be accessed in the form map[x][y]
+        // before this step it was like map[y][x]
+        let sorted = [];
+        for (let x=0; x<data[0].length; x++) {
+          sorted.push([]);
+          for (let y=0; y<data.length; y++) {
+            let cell = data[y][x];
+            if (cell === undefined)
+              cell = {tile: " "};
+            sorted[x].push(cell);
+          }
+        }
+        return sorted;
+      }),
 
     // test: testParseMapBlock
     mapBlock: (r) => P.seqObj(
@@ -449,7 +604,7 @@ pm.parser = function() {
     ).map(x => Object.assign(x, {type: pm.flags.LIGHT})),
 
     flag: (r) => P.alt(
-      P.string("walkable").result({type: pm.flags.WALKABLE}),
+      P.string("wall").result({type: pm.flags.WALL}),
       P.string("bumpable").result({type: pm.flags.BUMPABLE}),
       r.imageLinkFlag,
       r.colorFlag,
