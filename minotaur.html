@@ -94,7 +94,7 @@ end
 end )
 
 to use magnifying glass with minotaur
-  say "(the minotaur has fleas)"
+  say "[the minotaur has fleas]"
   add topic "fleas"
 end
 
@@ -748,7 +748,7 @@ pm.parser = function() {
 
     mapCell: (r) => P.alt(r.tileSymbol, P.string(" "))
       .map(x => ({tile: x})),
-    mapRow: (r) => P.notFollowedBy(r.endBlock)
+    mapRow: (r) => P.notFollowedBy(r._.then(r.endBlock))
       .then(r.mapCell.atLeast(1)),
 
     map: (r) => r.mapRow.sepBy1(P.newline)
@@ -1167,24 +1167,32 @@ pm.parser = function() {
         let code = `
           key
             1 is for start
-            # is for panel, a wall
-            * is for torch, a point light with color 0x39FF14
-            ? is for lantern, a point light with color 0xaa2164
-            ! is for red lantern, a point light with color 0xff0034
-            M is for minotaur, a wall
+            # is for panel, a wall, 
+                            a box with color #8833aa
+                                  with pattern "thin stripes" 4x4
+            * is for torch, a point light with color #39FF14 
+                                          with intensity 4/5
+            ? is for lantern, a point light with color #aa2164
+            ! is for potion, an item, 
+                             a box with color #ff0000, 
+                             a point light with color #ff0034
+            M is for minotaur
+            & is for heart, an undroppable item
+            o is for magnifying glass, an undroppable item
           end
 
           map named "start"
-                   ########
-                   #* M   #
-                   # #  # #
-                   #      #
-                   # #  # #
-              ######    * #
-              # *     #####
-            ###   #  #
-            #1      ?#
-            ##########
+                   #################
+                   #* M        #   #
+                   # #    #    #   #  ##########
+                   #      #        #  #  !  #  #
+                   ##   # ##### #######        #
+              ######   !*                 ###  #
+              # *     ######### ########     ! #
+            #######  #        # #      #########
+            #1      ?########## #
+            ##########          #
+                     ############
           end
         `;
 
