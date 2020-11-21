@@ -204,9 +204,9 @@ const pm = {
   version: 0
 };
 
-// -------------------------------
+// --------------------------------------------------------------
 // #constants
-// -------------------------------
+// --------------------------------------------------------------
 pm.featureOption = {
   COLOR: Symbol("color"),
   PATTERN: Symbol("pattern"),
@@ -252,9 +252,9 @@ pm.command = {
   SAY: Symbol("say")
 };
 
-// -------------------------------
+// --------------------------------------------------------------
 // #util -- helpers
-// -------------------------------
+// --------------------------------------------------------------
 pm.offsetPoint = function(x, y, dir) {
   switch (dir) {
     case pm.dir.NORTH:
@@ -313,21 +313,14 @@ pm.dirLeft = function(dir) {
   }
 };
 
-pm.cachedPlainMaterials = {};
-pm.getPlainColorMaterial = function(hexColor) {
-  if (!(hexColor in pm.cachedPlainMaterials))
-    pm.cachedPlainMaterials[hexColor] = new THREE.MeshPhongMaterial({color: hexColor});
-
-  return pm.cachedPlainMaterials[hexColor];
-};
-
-// -------------------------------
+// --------------------------------------------------------------
 // #map -- obj representing a map
-// -------------------------------
+// --------------------------------------------------------------
 pm.Map = function(maze) {
-  this.key = {};
-  this.map = {};
+  this.tileGrid = [];
+  this.live = [];
   this.maze = maze;
+  this.root = new THREE.Object3D();
 };
 
 // todo make a Tile class for runtime which knows its own metadata/features, instead of
@@ -336,78 +329,182 @@ pm.Map.prototype.hasFeature = function(tile, feature) {
   if (tile == " ")
     return false;
 
-  return this.key[tile]
+  return this.maze.key[tile]
     .features.some(x => x.type == feature);
 };
 
-pm.Map.prototype.getFeature = function(tile, feature) {
-  return this.key[tile]
-    .features.find(x => x.type == feature);
-};
-
-pm.Map.prototype.getAllFeatures = function(tile) {
-  return this.key[tile].features;
-}
-
 pm.Map.prototype.hasFeatureAtPoint = function(feature, x, y) {
-  return this.hasFeature(this.map[x][y].tile, feature);
+  let tileAtPoint = this.live.find(x => mapX.x == x && mapX.y == y);
+  return tileAtPoint.hasFeature(feature);
 };
 
 pm.Map.prototype.checkForWall = function(x, y) {
   return this.hasFeatureAtPoint(pm.feature.WALL, x, y);
 };
 
-// -------------------------------
-// #maze -- the main runtime class
-// -------------------------------
-pm.Maze = function() {
-  this.maps = {};
-  this.player = null;
-  this.state = pm.state.READY;
+pm.Map.prototype.build = function() {
+  for (let x = 0; x<this.tileGrid.length; x++) {
+    for (let y = 0; y<this.tileGrid[x].length; y++) {
+      let cell = this.tileGrid[x][y];
+
+      // blank tile
+      if (cell == " ") 
+        continue;
+
+      let tile = this.setTile(cell, x, y);
+      tile.build();
+      if (tile.name == "start") 
+        this.player.warp(x, y);
+    }
+  }
 };
 
-pm.Maze.prototype.buildMaze = function() {
+pm.Map.prototype.setTile = function(tileSymbol, x, y) {
+  let tileName = this.maze.key[tileSymbol];
+  let tileDef = this.maze.tiles.find(x => x.name == tileName);
+
+  let tile = new pm.Tile(
+    tileSymbol, x, y, tileDef.features, this);
+  this.live.push(tile);
+  return tile;
+};
+
+// --------------------------------------------------------------
+// #tile -- obj representing a tile at runtime
+// --------------------------------------------------------------
+pm.Tile = function(tileSymbol, x, y, featureList, map) {
+  this.x = x;
+  this.y = y;
+  this.featureList = featureList;
+  this.map = map;
+  this.root = new THREE.Object3D();
+  this.root.rotateY(-Math.PI/2);
+  this.dir = pm.dir.EAST;
+};
+
+pm.Tile.prototype.hasFeature = function(featureSymbol) {
+  return this.featureList.some(x => x.type === featureSymbol);
+};
+
+pm.Tile.prototype.getFeature = function(featureSymbol) {
+  return this.featureList.find(x => x.type === featureSymbol);
+};
+
+pm.Tile.prototype.build = function() {
+  this.map.root.add(this.root);
+  this.root.position.set(this.x, 0, this.y);
+
+  if (this.hasFeature(pm.feature.BOX)) {
+    let f = this.getFeature(pm.feature.BOX);
+
+    let bg = new THREE.BoxGeometry();
+    let hexColor = f.options.find(x => x.type == pm.featureOption.COLOR);
+    let mat;
+    if (hexColor === undefined)
+      mat = new THREE.MeshPhongMaterial({color: 0xffffff});
+    else
+      mat = new THREE.MeshPhongMaterial({color: hexColor});
+    let box = new THREE.Mesh(bg, mat);
+    this.root.add(box);
+  } 
+
+  if (this.hasFeature(pm.feature.LIGHT)) {
+    let f = this.getFeature(pm.feature.LIGHT);
+    let light;
+
+    switch (f.lightType) {
+      case "point":
+        light = new THREE.PointLight(f.color);
+        break;
+      case "directional":
+        light = new THREE.DirectionalLight(f.color);
+        break;
+      case "hemisphere":
+        light = new THREE.HemisphereLight(f.color, f.secondaryColor);
+        break;
+    }
+
+    this.root.add(light);
+  }
+}
+
+// --------------------------------------------------------------
+// #maze -- the main runtime class
+// --------------------------------------------------------------
+pm.Maze = function() {
+  this.maps = [];
+  this.palettes = [];
+  this.patterns = [];
+  this.itemHandlers = [];
+  this.startingItems = [];
+  this.topics = [];
+  this.player = new pm.Player(this);
+  this.state = pm.state.READY;
+
+  this.key = {};
+  this.tiles = [];
+  this.root = new THREE.Object3D();
+};
+
+pm.Maze.prototype.build = function() {
+  this.setupGraphics();
   for (let s of document.scripts) {
     if (s.type == "text/minotaur") {
       let code = s.innerText;
       let data = pm.parser().maze.tryParse(code);
       console.log(data);
 
-      let mapName;
+      for (let blockNode of data) {
+        let nodeName = blockNode.name;
+        let block = blockNode.value;
 
-      for (let block of data) {
-        mapName = block.value.name;
-        if (!(mapName in this.maps))
-          this.maps[mapName] = new pm.Map(this);
-
-        if (block.name == "keyBlock")
-          this.maps[mapName].key = block.value.tiles;
-        else if (block.name == "mapBlock")
-          this.maps[mapName].map = block.value.tiles;
+        switch (nodeName) {
+          case "aboutBlock":
+            this.mergeTile(block.name, block.features);
+            break;
+          case "keyBlock":
+            for (let symbol in block.tiles) {
+              this.key[symbol] = block.tiles[symbol].name;
+              this.mergeTile(block.tiles[symbol].name,
+                             block.tiles[symbol].features)
+            }
+            break;
+          case "mapBlock":
+            let m = new pm.Map(this);
+            m.name = block.name;
+            m.tileGrid = block.tileGrid;
+            this.maps.push(m);
+          case "paletteBlock":
+            this.palettes.push(block);
+            break;
+          case "patternBlock":
+            this.patterns.push(block);
+            break;
+          case "startingItemsBlock":
+            this.startingItems.push(block);
+            break;
+          case "startingTopicsBlock":
+            this.topics = this.topics.concat(block.topics);
+            break;
+          case "useItemBlock":
+            this.itemHandlers.push(block);
+            break;
+        }
       }
 
+      // break here to just parse the first script on the page
       break;
     }
   }
 };
 
-pm.Maze.prototype.play = function() {
-  if ("start" in this.maps) {
-    this.enterMap(this.maps["start"]);
-  } else {
-    throw "you must name at least one map 'start'";
-  }
-};
-
-pm.Maze.prototype.enterMap = function(m) {
+pm.Maze.prototype.setupGraphics = function() {
   this.scene = new THREE.Scene();
   this.scene.background = new THREE.Color(0x87ceeb);
+  this.scene.add(this.root);
 
   let width = 640;
   let height = 480;
-
-  if (this.player == null)
-    this.player = new pm.Player(m);
 
   this.camera = new THREE.PerspectiveCamera(
     60, // fov 
@@ -415,83 +512,44 @@ pm.Maze.prototype.enterMap = function(m) {
     0.1, // near clip 
     1000); // far clip
   this.player.root.add(this.camera);
-  this.scene.add(this.player.root);
   this.camera.position.set(0,-0.1,0.5);
+  this.root.add(this.player.root);
+  let light = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.8);
+  this.root.add(light);
   this.renderer = new THREE.WebGLRenderer();
   this.renderer.setSize(width, height);
   document.body.appendChild(this.renderer.domElement);
+};
 
-  // construct the maze
-  // todo probably move this into the Map class?
-  let bg = new THREE.BoxGeometry();
-  for (let x = 0; x<m.map.length; x++) {
-    for (let y = 0; y<m.map[x].length; y++) {
-      let cell = m.map[x][y];
+pm.Maze.prototype.mergeTile = function(name, features) {
+  let tile = this.tiles.find(x => x.name == name);
 
-      // blank tile
-      if (cell.tile == " ") 
-        continue
+  if (features === undefined)
+    features = [];
 
-      let tileData = m.key[cell.tile];
-
-      if (m.hasFeature(cell.tile, pm.feature.BOX)) {
-        console.log("box");
-        let f = m.getFeature(cell.tile, pm.feature.BOX);
-        let hexColor = f.color;
-        let mat = pm.getPlainColorMaterial(hexColor);
-        let box = new THREE.Mesh(bg, mat);
-        box.position.set(x, 0, y);
-        cell.mesh = box;
-        this.scene.add(box);
-        
-      } 
-
-      if (m.hasFeature(cell.tile, pm.feature.LIGHT)) {
-        let f = m.getFeature(cell.tile, pm.feature.LIGHT);
-        let light;
-
-        switch (f.lightType) {
-          case "point":
-            light = new THREE.PointLight(f.color);
-            break;
-          case "directional":
-            light = new THREE.DirectionalLight(f.color);
-            break;
-          case "hemisphere":
-            light = new THREE.HemisphereLight(f.color, f.secondaryColor);
-            break;
-        }
-
-        this.scene.add(light);
-      }
-
-      if (m.key[cell.tile].name == "start") 
-        this.player.warp(x, y);
-    }
+  if (tile === undefined) {
+    tile = {name: name, features: []};
+    this.tiles.push(tile);
   }
 
-  /*
-  let bGeo = new THREE.BoxGeometry();
-  let fGeo = new THREE.PlaneGeometry();
-  let mat = new THREE.MeshPhongMaterial( {color: 0xf81894} );
-  let fMat = new THREE.MeshPhongMaterial( {color: 0xa8a8f4} );
-  this.box = new THREE.Mesh(bGeo, mat);
-  this.scene.add(this.box);
+  tile.features = tile.features.concat(features);
+};
 
-  this.floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(10,10,1,1), 
-    new THREE.MeshBasicMaterial({color: 0xa8a8f4}));
-  this.floor.rotation.set(-Math.PI/2, 0, 0);
-  this.floor.position.set(0,-2,0);
-  this.scene.add(this.floor);
-*/
+pm.Maze.prototype.play = function() {
+  let startMap = this.maps.find(x => x.name == "start");
 
-  let light = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.8);
-  this.scene.add(light);
-
-  //this.camera.lookAt(0,0,0);
+  if (startMap !== undefined)
+    this.enterMap(startMap);
+  else 
+    throw "you must name at least one map 'start'";
 
   this.animate();
+};
+
+pm.Maze.prototype.enterMap = function(m) {
+  this.player.map = m;
+  m.build();
+  this.root.add(m.root);
 };
 
 pm.Maze.prototype.animate = function() {
@@ -529,12 +587,12 @@ pm.Maze.prototype.move = function(direction) {
   }
 };
 
-// -------------------------------
+// --------------------------------------------------------------
 // #player -- player class
-// -------------------------------
-pm.Player = function(map) {
-  this.map = map;
-  this.maze = map.maze;
+// --------------------------------------------------------------
+pm.Player = function(maze) {
+  this.maze = maze;
+  this.map = null;
   this.x = 0;
   this.y = 0;
   this.dir = pm.dir.EAST;
@@ -629,9 +687,9 @@ pm.Player.prototype.turnRight = function() {
     .start();
 };
 
-// -------------------------------
+// --------------------------------------------------------------
 // #main -- entry point
-// -------------------------------
+// --------------------------------------------------------------
 pm.main = function() {
   let noload = document.getElementById("noload");
   noload.parentNode.removeChild(noload);
@@ -639,7 +697,7 @@ pm.main = function() {
   document.addEventListener("keydown", pm.keydown, false);
 
   pm.liveMaze = new pm.Maze();
-  pm.liveMaze.buildMaze();
+  pm.liveMaze.build();
   pm.liveMaze.play();
 };
 
@@ -661,10 +719,10 @@ pm.keydown = function(event) {
   }
 };
 
-// -------------------------------
+// --------------------------------------------------------------
 // #parser -- transform markup into 
 //            maps and keys
-// -------------------------------
+// --------------------------------------------------------------
 pm.parser = function() {
   let P = window.Parsimmon;
 
@@ -730,10 +788,12 @@ pm.parser = function() {
                 .skip(P.string(open));
       }),
 
+    // test: testParseHexColor
     hexColor: (r) => P.alt(P.regexp(/0x/i), P.string("#"))
       .then(r.hexDigit.times(6))
-        .desc("hex color")
-        .map(x => Number("0x" + x)),
+      .tieWith("")
+      .desc("hex color")
+      .map(x => Number("0x" + x)),
 
     hexDigit: () => P.regexp(/[0-9a-f]/i)
       .desc("hex digit"),
@@ -746,15 +806,14 @@ pm.parser = function() {
         r.__)
       .then(r.quotedString),
 
-    mapCell: (r) => P.alt(r.tileSymbol, P.string(" "))
-      .map(x => ({tile: x})),
+    mapCell: (r) => P.alt(r.tileSymbol, P.string(" ")),
     mapRow: (r) => P.notFollowedBy(r._.then(r.endBlock))
       .then(r.mapCell.atLeast(1)),
 
-    map: (r) => r.mapRow.sepBy1(P.newline)
+    tileGrid: (r) => r.mapRow.sepBy1(P.newline)
       .map(function(data) {
-        // reorganize the map data so it can be accessed in the form map[x][y]
-        // before this step it was like map[y][x]
+        // reorganize the map data so it can be accessed in the form tileGrid[x][y]
+        // before this step it was like tileGrid[y][x]
         // also does some cleanup with blank cells.
         let sorted = [];
         for (let x=0; x<data[0].length; x++) {
@@ -772,14 +831,14 @@ pm.parser = function() {
     mapBlock: (r) => P.seqObj(
       ["name", r.startMap],
       r.__,
-      ["tiles", r.map],
+      ["tileGrid", r.tileGrid],
       r.__,
       r.endBlock
     ).node("mapBlock"),
 
     startKey: (r) => P.string("key"),
 
-    thingName: (r) => 
+    tileName: (r) => 
       P.takeWhile(c => "\n\r,\"'".indexOf(c) == -1),
 
     keyAssignment: (r) => P.seqObj(
@@ -787,7 +846,7 @@ pm.parser = function() {
         r.__,
         P.string("is for"),
         r.__,
-        ["name", r.thingName]
+        ["name", r.tileName]
     ),
 
     key: (r) => 
@@ -960,7 +1019,7 @@ pm.parser = function() {
     startAboutBlock: (r) => P.seq(
       P.string("about"),
       r.__)
-    .then(r.thingName),
+    .then(r.tileName),
 
     aboutBlock: (r) => P.seqObj(
       ["name", r.startAboutBlock],
@@ -981,7 +1040,7 @@ pm.parser = function() {
     startStartingItemsBlock: (r) => P.seq(
       P.string("starting items for"),
       r.__)
-    .then(r.thingName),
+    .then(r.tileName),
 
     startingItemsBlock: (r) => P.seqObj(
       ["name", r.startStartingItemsBlock],
@@ -991,7 +1050,7 @@ pm.parser = function() {
         r.__,
         P.string("of"),
         r.__,
-        r.thingName,
+        r.tileName,
       ).sepBy(r.__)],
       r.__,
       r.endBlock
@@ -1000,11 +1059,11 @@ pm.parser = function() {
     startUseItemBlock: (r) => P.seqObj(
       P.string("to use"),
       r.__,
-      ["name", r.thingName],
+      ["name", r.tileName],
       ["target", P.seq(
         P.string("with"),
         r.__)
-        .then(r.thingName)
+        .then(r.tileName)
         .fallback(null)
       ]
     ),
@@ -1026,19 +1085,19 @@ pm.parser = function() {
       r.__,
       ["quantity", r.quantity],
       r.__,
-      ["itemName", r.thingName]
+      ["itemName", r.tileName]
     ).map(x => Object.assign(x, {type: pm.command.GAIN_ITEM})),
 
     commandGoodbye: (r) => P.seqObj(
       P.string("goodbye"),
       r.__,
-      ["name", r.thingName]
+      ["name", r.tileName]
     ).map(x => Object.assign(x, {type: pm.command.GOODBYE})),
 
     commandHello: (r) => P.seqObj(
       P.string("hello"),
       r.__,
-      ["name", r.thingName]
+      ["name", r.tileName]
     ).map(x => Object.assign(x, {type: pm.command.HELLO})),
 
     commandLoseItem: (r) => P.seqObj(
@@ -1046,7 +1105,7 @@ pm.parser = function() {
       r.__,
       r.quantity,
       r.__,
-      ["itemName", r.thingName]
+      ["itemName", r.tileName]
     ).map(x => Object.assign(x, {type: pm.command.LOSE_ITEM})),
 
     commandSay: (r) => P.seqObj(
@@ -1147,9 +1206,9 @@ pm.parser = function() {
 
   };
 
-  // -------------------------------
+  // --------------------------------------------------------------
   // #tests
-  // -------------------------------
+  // --------------------------------------------------------------
   pm.runTests = function() {
     const fail                = pm.TinyTest.fail,
           assert              = pm.TinyTest.assert,
@@ -1160,9 +1219,6 @@ pm.parser = function() {
           log                 = console.log;
 
     tests({
-      // -------------------------------
-      // Parser tests
-      // -------------------------------
       "testParseMaze": function() {
         let code = `
           key
@@ -1198,8 +1254,14 @@ pm.parser = function() {
 
           let p = pm.parser().maze;
           let v = p.tryParse(code);
-        }
-      });
+      },
+      "testParseHexColor": function() {
+        let p = pm.parser().hexColor;
+
+        eq(p.tryParse("0xff0000"), 0xff0000);
+        eq(p.tryParse("#ff0000"), 0xff0000);
+      }
+    });
   };
   </script>
 
