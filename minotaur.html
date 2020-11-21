@@ -28,7 +28,7 @@ map named "start"
     ######   !*                 ###  #
     # *     ######### ########     ! #
   #######  #        # #      #########
-  #1      ?########## #
+  #  1    ?########## #
   ##########          #
            ############
 end
@@ -38,12 +38,18 @@ key
   # is for panel, a wall, 
                   a box with color #8833aa
                         with pattern "thin stripes" 4x4
-  * is for torch, a point light with color #39FF14 
-                                with intensity 4/5
-  ? is for lantern, a point light with color #aa2164
+  * is for torch, a point light with color #ffffff
+                                with intensity 2/5
+                                with distance 6
+  ? is for lantern, a point light with color #ffffff
+                                  with intensity 3/5
+                                  with distance 4,
+                    a box with color #00ff00
   ! is for potion, an item, 
                    a box with color #ff0000, 
-                   a point light with color #ff0034
+                   a point light with color #ff0000
+                                 with distance 1
+                                 with intensity 1
   M is for minotaur
   & is for heart, an undroppable item
   o is for magnifying glass, an undroppable item
@@ -209,6 +215,8 @@ const pm = {
 // --------------------------------------------------------------
 pm.featureOption = {
   COLOR: Symbol("color"),
+  INTENSITY: Symbol("intensity"),
+  DISTANCE: Symbol("distance"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
   GREETING: Symbol("greeting"),
@@ -313,6 +321,10 @@ pm.dirLeft = function(dir) {
   }
 };
 
+pm.getOption = function(feature, optionSymbol) {
+  return feature.options.find(x => x.type === optionSymbol);
+};
+
 // --------------------------------------------------------------
 // #map -- obj representing a map
 // --------------------------------------------------------------
@@ -334,7 +346,9 @@ pm.Map.prototype.hasFeature = function(tile, feature) {
 };
 
 pm.Map.prototype.hasFeatureAtPoint = function(feature, x, y) {
-  let tileAtPoint = this.live.find(x => mapX.x == x && mapX.y == y);
+  let tileAtPoint = this.live.find(t => t.mapX == x && t.mapX == y);
+  if (tileAtPoint === undefined)
+    return false;
   return tileAtPoint.hasFeature(feature);
 };
 
@@ -354,7 +368,7 @@ pm.Map.prototype.build = function() {
       let tile = this.setTile(cell, x, y);
       tile.build();
       if (tile.name == "start") 
-        this.player.warp(x, y);
+        this.maze.player.warp(x, y);
     }
   }
 };
@@ -364,7 +378,7 @@ pm.Map.prototype.setTile = function(tileSymbol, x, y) {
   let tileDef = this.maze.tiles.find(x => x.name == tileName);
 
   let tile = new pm.Tile(
-    tileSymbol, x, y, tileDef.features, this);
+    tileSymbol, tileName, x, y, tileDef.features, this);
   this.live.push(tile);
   return tile;
 };
@@ -372,7 +386,7 @@ pm.Map.prototype.setTile = function(tileSymbol, x, y) {
 // --------------------------------------------------------------
 // #tile -- obj representing a tile at runtime
 // --------------------------------------------------------------
-pm.Tile = function(tileSymbol, x, y, featureList, map) {
+pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
   this.x = x;
   this.y = y;
   this.featureList = featureList;
@@ -380,6 +394,7 @@ pm.Tile = function(tileSymbol, x, y, featureList, map) {
   this.root = new THREE.Object3D();
   this.root.rotateY(-Math.PI/2);
   this.dir = pm.dir.EAST;
+  this.name = tileName;
 };
 
 pm.Tile.prototype.hasFeature = function(featureSymbol) {
@@ -398,7 +413,7 @@ pm.Tile.prototype.build = function() {
     let f = this.getFeature(pm.feature.BOX);
 
     let bg = new THREE.BoxGeometry();
-    let hexColor = f.options.find(x => x.type == pm.featureOption.COLOR);
+    let hexColor = pm.getOption(f, pm.featureOption.COLOR);
     let mat;
     if (hexColor === undefined)
       mat = new THREE.MeshPhongMaterial({color: 0xffffff});
@@ -423,6 +438,14 @@ pm.Tile.prototype.build = function() {
         light = new THREE.HemisphereLight(f.color, f.secondaryColor);
         break;
     }
+
+    let intensityOption = pm.getOption(f, pm.featureOption.INTENSITY);
+    if (intensityOption !== undefined)
+      light.intensity = intensityOption.intensity;
+
+    let distanceOption = pm.getOption(f, pm.featureOption.DISTANCE);
+    if (distanceOption !== undefined)
+      light.distance = distanceOption.distance;
 
     this.root.add(light);
   }
@@ -703,6 +726,7 @@ pm.main = function() {
 
 pm.keydown = function(event) {
   let keycode = event.which;
+  let caught = true;
   switch (keycode) {
     case 38:
       pm.liveMaze.move(pm.key.UP);
@@ -716,7 +740,12 @@ pm.keydown = function(event) {
     case 39:
       pm.liveMaze.move(pm.key.RIGHT);
       break;
+    default:
+      caught = false;
   }
+
+  if (caught)
+    event.preventDefault();
 };
 
 // --------------------------------------------------------------
@@ -763,11 +792,13 @@ pm.parser = function() {
 
     fraction: (r) => P.seqObj(
       ["numerator", P.digits],
-      r._,
-      P.string("/"),
-      r._,
-      ["denominator", P.digits]
-    ),
+      ["denominator", P.seq(
+        r._,
+        P.string("/"),
+        r._)
+        .then(P.digits)
+        .fallback("1")]
+    ).map(x => Number(x.numerator) / Number(x.denominator)),
 
     // todo -- other types of quantity:
     //         1d6+4, dice roll
@@ -879,8 +910,15 @@ pm.parser = function() {
       P.string("with intensity"),
       r.__)
     .then(r.fraction)
-    .map(x => ({type: pm.featureOption.COLOR, 
-      color: x})),
+    .map(x => ({type: pm.featureOption.INTENSITY, 
+      intensity: x})),
+
+    distanceOption: (r) => P.seq(
+      P.string("with distance"),
+      r.__)
+    .then(r.fraction)
+    .map(x => ({type: pm.featureOption.DISTANCE, 
+      distance: x})),
 
     patternOption: (r) => P.seqObj(
       P.string("with pattern"),
@@ -922,7 +960,8 @@ pm.parser = function() {
 
     lightOption: (r) => P.alt(
       r.colorOption,
-      r.intensityOption
+      r.intensityOption,
+      r.distanceOption
     ),
 
     lightFeature: (r) => P.seqObj(
@@ -1260,6 +1299,7 @@ pm.parser = function() {
 
         eq(p.tryParse("0xff0000"), 0xff0000);
         eq(p.tryParse("#ff0000"), 0xff0000);
+        eq(p.tryParse("#00ff00"), 0x00ff00);
       }
     });
   };
