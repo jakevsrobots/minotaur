@@ -377,6 +377,17 @@ pm.Map.prototype.checkForWall = function(x, y) {
 };
 
 pm.Map.prototype.build = function() {
+  for (let cell of this.tileGrid) {
+    // blank tile
+    if (cell.tileSymbol == " ") 
+      continue;
+
+    let tile = this.addTile(cell.tileSymbol, cell.x, cell.y);
+    tile.build();
+    if (tile.name == "start") 
+      this.maze.player.warp(cell.x, cell.y);
+  }
+
   for (let x = 0; x<this.tileGrid.length; x++) {
     for (let y = 0; y<this.tileGrid[x].length; y++) {
       let cell = this.tileGrid[x][y];
@@ -393,7 +404,7 @@ pm.Map.prototype.build = function() {
   }
 };
 
-pm.Map.prototype.setTile = function(tileSymbol, x, y) {
+pm.Map.prototype.addTile = function(tileSymbol, x, y) {
   let tileName = this.maze.key[tileSymbol];
   let tileDef = this.maze.tiles.find(x => x.name == tileName);
 
@@ -493,7 +504,6 @@ pm.Maze.prototype.build = function() {
     if (s.type == "text/minotaur") {
       let code = s.innerText;
       let data = pm.parser().maze.tryParse(code);
-      console.log(data);
 
       for (let blockNode of data) {
         let nodeName = blockNode.name;
@@ -879,21 +889,24 @@ pm.parser = function() {
       .then(r.mapCell.atLeast(1)),
 
     tileGrid: (r) => r.mapRow.sepBy1(P.newline)
-      .map(function(data) {
-        // reorganize the map data so it can be accessed in the form tileGrid[x][y]
-        // before this step it was like tileGrid[y][x]
-        // also does some cleanup with blank cells.
-        let sorted = [];
-        for (let x=0; x<data[0].length; x++) {
-          sorted.push([]);
-          for (let y=0; y<data.length; y++) {
-            let cell = data[y][x];
-            if (cell === undefined)
-              cell = {tile: " "};
-            sorted[x].push(cell);
+      .map(function(rows) {
+        let cells = [];
+        for (let y=0; y<rows.length; y++) {
+          let row = rows[y];
+          for (let x=0; x<row.length; x++) {
+            let tileSymbol = rows[x];
+            if (tileSymbol === undefined)
+              tileSymbol = " ";
+
+            cells.push({
+              tileSymbol: row[x],
+              x: x,
+              y: y
+            });
           }
         }
-        return sorted;
+
+        return cells;
       }),
 
     mapBlock: (r) => P.seqObj(
@@ -1344,7 +1357,6 @@ pm.parser = function() {
         let code = `1 is for start with a wall`;
         let p = pm.parser().key;
         let v = p.tryParse(code);
-        console.log(v);
       },
       "testParseMaze": function() {
         let code = `
