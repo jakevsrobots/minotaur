@@ -5,6 +5,7 @@ pet minotaur, version 0.
 edit the script below.
 
 bugs:
+- map width doesn't extend beyond the width of the first line
 - nested comments don't work, and also if you try to
   comment out a string with a close paren it will break.
 -->
@@ -35,45 +36,64 @@ end
 
 key
   1 is for start
-  # is for panel, a wall, 
-                  a box with color #8833aa
-                        with pattern "thin stripes" 4x4
-  * is for torch, a point light with color #ffffff
-                                with intensity 2/5
-                                with distance 6
-  ? is for lantern, a point light with color #ffffff
-                                  with intensity 3/5
-                                  with distance 4,
-                    a box with color #00ff00
-  ! is for potion, an item, 
-                   a box with color #ff0000, 
-                   a point light with color #ff0000
-                                 with distance 1
-                                 with intensity 1
+  # is for panel with 
+      a wall 
+      and a box 
+        with color #ff0000
+        with pattern "thin stripes" 4x4
+  * is for torch with 
+      a point light 
+        with color #ffffff
+        with intensity 2/5 with distance 6
+  ? is for lantern with 
+      a point light 
+        with color #ff0000
+        with intensity 3/5 
+        with distance 100
+  ! is for potion with 
+    an item
+    and a box 
+      with color #ff0000
+      with scale 1/5
+      with nudge x 0 y -1/5 z 0
+    and a box 
+      with color #00ff00
+      with scale 1/5
+      with nudge x 0 y 2/5 z 0
+    and a point light 
+      with color #ff0000
+      with distance 1
+      with intensity 1
   M is for minotaur
-  & is for heart, an undroppable item
-  o is for magnifying glass, an undroppable item
+  & is for heart with 
+    an undroppable item
+  o is for loupe with 
+    an undroppable item
 end
 
 about minotaur
-  a wall,
-  a box with color #3366cc,
-  a chat with prompt "talk to the minotaur"
-         with greeting "hi!"
-         with topic "the beach"
-                    "no i haven't been to the beach lately"
-                    "i basically never leave the maze lol"
-         with topic "fire"
-                    "i'm actually kind of scared of fire lol"
-                    "it's ok you didn't know"
-         with topic "fleas"
-                    "oh you noticed"
+  a wall
+  and a box 
+    with color #3366cc
+            
+  and a chat 
+    with prompt "talk to the minotaur"
+    with greeting "hi!"
+    with topic "the beach"
+               "no i haven't been to the beach lately"
+               "i basically never leave the maze lol"
+    with topic "fire"
+               "i'm actually kind of scared of fire lol"
+               "it's ok you didn't know"
+    with topic "fleas"
+               "oh you noticed"
+               "cool"
 end
 
 starting items for player
   4 of heart
   1 of potion
-  1 of magnifying glass
+  1 of loupe
 end
 
 starting topics
@@ -93,14 +113,14 @@ end
 ( to use torch with minotaur
   if 1d6 > 4 then 
     minotaur loses 1 heart
-    say "[the minotaur's fur is singed.]"
+    say "the minotaur's fur is singed."
     say "ouch"
     add topic "fire"
   else say "you miss"
 end )
 
-to use magnifying glass with minotaur
-  say "[the minotaur has fleas]"
+to use loupe with minotaur
+  say "the minotaur has fleas"
   add topic "fleas"
 end
 
@@ -414,11 +434,9 @@ pm.Tile.prototype.build = function() {
 
     let bg = new THREE.BoxGeometry();
     let hexColor = pm.getOption(f, pm.featureOption.COLOR);
-    let mat;
-    if (hexColor === undefined)
-      mat = new THREE.MeshPhongMaterial({color: 0xffffff});
-    else
-      mat = new THREE.MeshPhongMaterial({color: hexColor});
+    let mat = new THREE.MeshPhongMaterial();
+    if (hexColor !== undefined)
+      mat.color.setHex(hexColor.color);
     let box = new THREE.Mesh(bg, mat);
     this.root.add(box);
   } 
@@ -537,7 +555,7 @@ pm.Maze.prototype.setupGraphics = function() {
   this.player.root.add(this.camera);
   this.camera.position.set(0,-0.1,0.5);
   this.root.add(this.player.root);
-  let light = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.8);
+  let light = new THREE.AmbientLight(0x404040, 1);
   this.root.add(light);
   this.renderer = new THREE.WebGLRenderer();
   this.renderer.setSize(width, height);
@@ -773,16 +791,18 @@ pm.parser = function() {
     _: (r) => r.spaceOrComment
       .many().desc("optional space"),
 
-    optArticle: (r) => P.seq(
+    article: (r) => P.seq(
         P.alt(
           P.string("an"), 
           P.string("a"), 
           P.string("the")),
         r.__)
-      .fallback()
-      .desc("optional article"),
+      .desc("article"),
 
-    commaSep: (r) => P.seq(r._, P.string(","), r.__),
+    and: (r) => P.seq(
+      r.__,
+      P.string("and"),
+      r.__).desc("and"),
 
     scale: (r) => P.seqObj(
       ["x", P.digits],
@@ -790,7 +810,24 @@ pm.parser = function() {
       ["y", P.digits]
     ).map(x => ([x.x, x.y == null ? 1 : x.y])),
 
+    // ex. "x 1/5 y 1 z -7"
+    // ex. "x 5 y 0 z 0"
+    vector: (r) => P.seqObj(
+      P.string("x"),
+      r.__,
+      ["x", r.fraction],
+      r.__,
+      P.string("y"),
+      r.__,
+      ["y", r.fraction],
+      r.__,
+      P.string("z"),
+      r.__,
+      ["z", r.fraction]
+    ),
+
     fraction: (r) => P.seqObj(
+      ["sign", P.alt(P.string("-"), P.string("+")).fallback("+")],
       ["numerator", P.digits],
       ["denominator", P.seq(
         r._,
@@ -798,7 +835,7 @@ pm.parser = function() {
         r._)
         .then(P.digits)
         .fallback("1")]
-    ).map(x => Number(x.numerator) / Number(x.denominator)),
+    ).map(x => Number(x.numerator) / Number(x.denominator) * (x.sign == "-" ? -1 : 1)),
 
     // todo -- other types of quantity:
     //         1d6+4, dice roll
@@ -869,9 +906,12 @@ pm.parser = function() {
 
     startKey: (r) => P.string("key"),
 
-    tileName: (r) => 
-      P.takeWhile(c => "\n\r,\"'".indexOf(c) == -1),
+    tileName: (r) => P.seq(
+      P.regexp(/[a-zA-Z_-]/),
+      P.regexp(/[a-zA-Z0-9_-]/).many().tieWith("")
+    ).tieWith(""),
 
+    // test: testParseKeyAssignment
     keyAssignment: (r) => P.seqObj(
         ["symbol", r.tileSymbol],
         r.__,
@@ -880,14 +920,18 @@ pm.parser = function() {
         ["name", r.tileName]
     ),
 
+    // test: testParseInKeyFeatureList
+    inKeyFeatureList: (r) => P.seq(
+      P.string("with"),
+      r.__)
+      .then(r.featureList),
+
+    // test: testParseKey
     key: (r) => 
       P.seqObj(
         P.notFollowedBy(r.endBlock),
         ["assignment", r.keyAssignment],
-        ["features", 
-          P.seq(r._, P.string(","), r.__)
-          .then(r.featureList)
-          .fallback([])])
+        ["features", r.__.then(r.inKeyFeatureList).fallback([])])
       .sepBy1(r.__)
       .map(function(x) {
         let key = {};
@@ -905,6 +949,20 @@ pm.parser = function() {
       .then(r.hexColor)
       .map(x => ({type: pm.featureOption.COLOR, 
                   color: x})),
+
+    scaleOption: (r) => P.seq(
+      P.string("with scale"),
+      r.__)
+      .then(r.fraction)
+      .map(x => ({type: pm.featureOption.SCALE, 
+                  scale: x})),
+
+    nudgeOption: (r) => P.seq(
+      P.string("with nudge"),
+      r.__)
+      .then(r.vector.sepBy1(r.__))
+      .map(n => ({type: pm.featureOption.NUDGE, 
+                  vector: n})),
 
     intensityOption: (r) => P.seq(
       P.string("with intensity"),
@@ -951,7 +1009,9 @@ pm.parser = function() {
 
     boxOption: (r) => P.alt(
       r.colorOption,
-      r.patternOption),
+      r.patternOption,
+      r.scaleOption,
+      r.nudgeOption),
 
     boxFeature: (r) => P.seqObj(
       P.string("box"),
@@ -998,7 +1058,7 @@ pm.parser = function() {
       ["options", optionParser(r, r.chatOption)]
     ).map(x => Object.assign(x, {type: pm.feature.CHAT})),
 
-    feature: (r) => r.optArticle
+    feature: (r) => r.article
       .then(P.alt(
         r.actionFeature,
         r.boxFeature,
@@ -1008,8 +1068,9 @@ pm.parser = function() {
         r.wallFeature,
       )),
 
+    // test: testParseFeatureList
     featureList: (r) => 
-      r.feature.sepBy1(r.commaSep),
+      r.feature.sepBy1(r.and),
 
     keyBlock: (r) => P.seqObj(
       ["name", r.startKey],
@@ -1100,6 +1161,7 @@ pm.parser = function() {
       r.__,
       ["name", r.tileName],
       ["target", P.seq(
+        r.__,
         P.string("with"),
         r.__)
         .then(r.tileName)
@@ -1258,22 +1320,48 @@ pm.parser = function() {
           log                 = console.log;
 
     tests({
+      "testParseKeyAssignment": function() {
+        let code = "1 is for some_name";
+        let p = pm.parser().keyAssignment;
+        let v = p.tryParse(code);
+        eq(v.name, "some_name")
+      },
+      "testParseInKeyFeatureList": function() {
+        let code = "with a wall and a box";
+        let p = pm.parser().inKeyFeatureList;
+        let v = p.tryParse(code);
+        eq(v.length, 2);
+        eq(v[0].type, pm.feature.WALL);
+      },
+      "testParseFeatureList": function() {
+        let code = "a wall and a box";
+        let p = pm.parser().featureList;
+        let v = p.tryParse(code);
+        eq(v.length, 2);
+        eq(v[0].type, pm.feature.WALL);
+      },
+      "testParseKey": function() {
+        let code = `1 is for start with a wall`;
+        let p = pm.parser().key;
+        let v = p.tryParse(code);
+        console.log(v);
+      },
       "testParseMaze": function() {
         let code = `
           key
             1 is for start
-            # is for panel, a wall, 
+            # is for panel with a wall and
                             a box with color #8833aa
                                   with pattern "thin stripes" 4x4
-            * is for torch, a point light with color #39FF14 
+            * is for torch with a point light with color #39FF14 
                                           with intensity 4/5
-            ? is for lantern, a point light with color #aa2164
-            ! is for potion, an item, 
-                             a box with color #ff0000, 
-                             a point light with color #ff0034
+            ? is for lantern with a point light with color #aa2164
+            ! is for potion with an item
+                             and a box with color #ff0000
+                             and a point light with color #ff0034
             M is for minotaur
-            & is for heart, an undroppable item
-            o is for magnifying glass, an undroppable item
+            & is for heart with an undroppable item
+            o is for loupe with an undroppable item
           end
 
           map named "start"
