@@ -21,61 +21,36 @@ bugs:
 )
 
 map named "start"
-         #################
-         #* M        #   #
-         # #    #    #   #  ##########
-         #      #        #  #  !  #  #
-         ##   # ##### #######        #
-    ######   !*                 ###  #
-    # *     ######### ########     ! #
-  #######  #        # #      #########
-  #  1    ?########## #
-  ##########          #
-           ############
+#####
+#1*M# o
+#####
 end
 
 key
   1 is for start
-  # is for panel with 
+  # is for wall with
       a wall 
       and a box 
-        with color #ff0000
-        with pattern "thin stripes" 4x4
-  * is for torch with 
-      a point light 
         with color #ffffff
-        with intensity 2/5 with distance 6
-  ? is for lantern with 
-      a point light 
-        with color #ff0000
-        with intensity 3/5 
-        with distance 100
-  ! is for potion with 
-    an item
-    and a box 
-      with color #ff0000
-      with scale 1/5
-      with nudge x 0 y -1/5 z 0
-    and a box 
-      with color #00ff00
-      with scale 1/5
-      with nudge x 0 y 2/5 z 0
-    and a point light 
-      with color #ff0000
-      with distance 1
-      with intensity 1
+        with pattern "thin stripes" 4x4 
   M is for minotaur
-  & is for heart with 
-    an undroppable item
-  o is for loupe with 
-    an undroppable item
+  * is for lamp with 
+      a point light 
+        with distance 3
+        with color #aa8840
+  o is for sun with 
+      a hemisphere light 
+        with color #ffaa33 
+        with secondary color #2266aa
+        with intensity 1/8
 end
 
 about minotaur
   a wall
   and a box 
-    with color #3366cc
-            
+    with scale 1/4
+    with color #3386cc
+
   and a chat 
     with prompt "talk to the minotaur"
     with greeting "hi!"
@@ -90,34 +65,10 @@ about minotaur
                "cool"
 end
 
-starting items for player
-  4 of heart
-  1 of potion
-  1 of loupe
-end
-
 starting topics
   "the beach"
   "fire"
 end
-
-starting items for minotaur
-  4 of heart
-end
-
-to use potion
-  gain 1 heart
-  lose 1 potion
-end
-
-( to use torch with minotaur
-  if 1d6 > 4 then 
-    minotaur loses 1 heart
-    say "the minotaur's fur is singed."
-    say "ouch"
-    add topic "fire"
-  else say "you miss"
-end )
 
 to use loupe with minotaur
   say "the minotaur has fleas"
@@ -235,11 +186,13 @@ const pm = {
 // --------------------------------------------------------------
 pm.featureOption = {
   COLOR: Symbol("color"),
-  INTENSITY: Symbol("intensity"),
   DISTANCE: Symbol("distance"),
+  GREETING: Symbol("greeting"),
+  INTENSITY: Symbol("intensity"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
-  GREETING: Symbol("greeting"),
+  SCALE: Symbol("scale"),
+  SECONDARY_COLOR: Symbol("secondary color"),
   TOPIC: Symbol("topic")
 };
 
@@ -449,22 +402,40 @@ pm.Tile.prototype.build = function() {
     if (hexColor !== undefined)
       mat.color.setHex(hexColor.color);
     let box = new THREE.Mesh(bg, mat);
+
+    let scale = pm.getOption(f, pm.featureOption.SCALE);
+    if (scale !== undefined)
+      box.scale.set(scale.scale, scale.scale, scale.scale);
+
     this.root.add(box);
   } 
 
   if (this.hasFeature(pm.feature.LIGHT)) {
     let f = this.getFeature(pm.feature.LIGHT);
     let light;
+    let colorOption = pm.getOption(f, pm.featureOption.COLOR);
+    let secondaryColorOption = pm.getOption(f, pm.featureOption.SECONDARY_COLOR);
+    let color, secondaryColor;
+
+    if (colorOption != undefined)
+      color = colorOption.color;
+    else
+      color = 0xffffff;
+
+    if (secondaryColorOption != undefined)
+      secondaryColor = secondaryColorOption.secondaryColor;
+    else
+      secondaryColor = 0xffffff;
 
     switch (f.lightType) {
       case "point":
-        light = new THREE.PointLight(f.color);
+        light = new THREE.PointLight(color);
         break;
       case "directional":
-        light = new THREE.DirectionalLight(f.color);
+        light = new THREE.DirectionalLight(color);
         break;
       case "hemisphere":
-        light = new THREE.HemisphereLight(f.color, f.secondaryColor);
+        light = new THREE.HemisphereLight(color, secondaryColor);
         break;
     }
 
@@ -563,7 +534,7 @@ pm.Maze.prototype.setupGraphics = function() {
     0.1, // near clip 
     1000); // far clip
   this.player.root.add(this.camera);
-  this.camera.position.set(0,-0.1,0.5);
+  this.camera.position.set(0,0,0.5);
   this.root.add(this.player.root);
   let light = new THREE.AmbientLight(0x404040, 1);
   this.root.add(light);
@@ -963,6 +934,13 @@ pm.parser = function() {
       .map(x => ({type: pm.featureOption.COLOR, 
                   color: x})),
 
+    secondaryColorOption: (r) => P.seq(
+      P.string("with secondary color"),
+      r.__)
+      .then(r.hexColor)
+      .map(x => ({type: pm.featureOption.SECONDARY_COLOR, 
+                  secondaryColor: x})),
+
     scaleOption: (r) => P.seq(
       P.string("with scale"),
       r.__)
@@ -982,14 +960,14 @@ pm.parser = function() {
       r.__)
     .then(r.fraction)
     .map(x => ({type: pm.featureOption.INTENSITY, 
-      intensity: x})),
+                intensity: x})),
 
     distanceOption: (r) => P.seq(
       P.string("with distance"),
       r.__)
     .then(r.fraction)
     .map(x => ({type: pm.featureOption.DISTANCE, 
-      distance: x})),
+                distance: x})),
 
     patternOption: (r) => P.seqObj(
       P.string("with pattern"),
@@ -1033,6 +1011,7 @@ pm.parser = function() {
 
     lightOption: (r) => P.alt(
       r.colorOption,
+      r.secondaryColorOption,
       r.intensityOption,
       r.distanceOption
     ),
