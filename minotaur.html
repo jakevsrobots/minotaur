@@ -22,7 +22,7 @@ bugs:
 
 map named "start"
 #####
-#1*M# o
+#1*M#
 #####
 end
 
@@ -32,28 +32,21 @@ key
       a wall 
       and a box 
         with color #ffffff
-        with pattern "thin stripes" 4x4 
-        with palette "monochrome"
+        with pattern noise
   M is for minotaur
   * is for lamp with 
       a point light 
-        with distance 3
-        with color #aa8840
-  o is for sun with 
-      a hemisphere light 
-        with color #ffaa33 
-        with secondary color #2266aa
-        with intensity 1/8
+        with distance 5
+        with color #aa2240
+        with intensity 2
 end
 
 about minotaur
   a wall
   and a box 
     with scale 1/4
-    with color #3386cc
-    with pattern "thick grid" 4x4
-    with palette "candy" 
-    
+    with color #00aaaa
+    with pattern "thick stripes" 2x1
 
   and a chat 
     with prompt "talk to the minotaur"
@@ -79,90 +72,80 @@ to use loupe with minotaur
   add topic "fleas"
 end
 
-palette named "monochrome"
-  0 #000000
-  1 #ffffff
-end
-
-palette named "candy"
-  0 #ff0000
-  1 #ffffff
-end
-
 pattern named "thin stripes"
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1000100010001000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
 end
 
 pattern named "thick stripes"
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
-  1110111011101110
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
+  F8F3FCF0F8F0cFF0
 end
 
 pattern named "thin grid"
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1111111111111111
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1111111111111111
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1111111111111111
-  1000100010001000
-  1000100010001000
-  1000100010001000
-  1111111111111111
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  FFFFFFFFFFFFFFFF
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  FFFFFFFFFFFFFFFF
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  FFFFFFFFFFFFFFFF
+  F000F000F000F000
+  F000F000F000F000
+  F000F000F000F000
+  FFFFFFFFFFFFFFFF
 end
 
 pattern named "thick grid"
-  1100110011001100
-  1100110011001100
-  1111111111111111
-  1111111111111111
-  1100110011001100
-  1100110011001100
-  1111111111111111
-  1111111111111111
-  1100110011001100
-  1100110011001100
-  1111111111111111
-  1111111111111111
-  1100110011001100
-  1100110011001100
-  1111111111111111
-  1111111111111111
+  FF00FF00FF00FF00
+  FF00FF00FF00FF00
+  FFFFFFFFFFFFFFFF
+  FFFFFFFFFFFFFFFF
+  FF00FF00FF00FF00
+  FF00FF00FF00FF00
+  FFFFFFFFFFFFFFFF
+  FFFFFFFFFFFFFFFF
+  FF00FF00FF00FF00
+  FF00FF00FF00FF00
+  FFFFFFFFFFFFFFFF
+  FFFFFFFFFFFFFFFF
+  FF00FF00FF00FF00
+  FF00FF00FF00FF00
+  FFFFFFFFFFFFFFFF
+  FFFFFFFFFFFFFFFF
 end
 
 (
@@ -198,7 +181,6 @@ pm.featureOption = {
   DISTANCE: Symbol("distance"),
   GREETING: Symbol("greeting"),
   INTENSITY: Symbol("intensity"),
-  PALETTE: Symbol("palette"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
   SCALE: Symbol("scale"),
@@ -308,25 +290,44 @@ pm.getOption = function(feature, optionSymbol) {
   return feature.options.find(x => x.type === optionSymbol);
 };
 
-pm.createTexture = function(pixels, palette) {
-  let width = 16;
-  let height = 16;
-  let data = new Uint8Array(3 * width * height);
-
+pm.createTexture = function(pixels) {
+  let width = pixels.length;
+  let height = pixels[0].length;
+  let size = width*height;
+  let data = new Uint8Array(size * 3);
+  
   for (let y=0; y<height; y++) {
-    for (let x=0; x<height; x++) {
-      let i = y * x.length + x;
-      let stride = i*3;
-      let colorId = pixels[y][x];
-      let colorHex = palette.colors[colorId].value;
-      let color = new THREE.Color(Number(colorHex));
-      data[stride] = color.r;
-      data[stride+1] = color.g;
-      data[stride+2] = color.b;
+    for (let x=0; x<width; x++) {
+      let i=(y*width) + x;
+      let val = pixels[y][x];
+      let lum = (Number("0x" + val)+1)/16;
+      data[i] = 255 * lum;
     }
   }
 
-  return new THREE.DataTexture(data, width, height, THREE.RGBFormat, THREE.UnsignedByteType);
+  let t = new THREE.DataTexture(data, width, height, THREE.LuminanceFormat, THREE.UnsignedByteType);
+  t.needsUpdate = true;
+  t.magFilter = THREE.NearestFilter;
+  return t;
+};
+
+pm.noisePattern = function(width, height) {
+  let pattern = {
+    name: "__noise",
+    pixels: []
+  };
+
+  for (let x=0; x<width; x++) {
+    pattern.pixels.push([]);
+    for (let y=0; y<height; y++) {
+      let c = (Math.floor(Math.random() * 16)).toString(16);
+      pattern.pixels[x].push(c);
+    }
+  }
+
+  console.log("p", pattern);
+
+  return pattern;
 };
 
 // --------------------------------------------------------------
@@ -427,34 +428,33 @@ pm.Tile.prototype.build = function() {
   if (this.hasFeature(pm.feature.BOX)) {
     let f = this.getFeature(pm.feature.BOX);
     let bg = new THREE.BoxBufferGeometry();
-    let mat = new THREE.MeshPhongMaterial();
+    let matOptions = {};
 
     // color
     let hexColor = pm.getOption(f, pm.featureOption.COLOR);
     if (hexColor !== undefined)
-      mat.color.setHex(hexColor.color);
+      matOptions.color = hexColor.color;
 
     // texture
     let patternOption = pm.getOption(f, pm.featureOption.PATTERN);
-    let paletteOption = pm.getOption(f, pm.featureOption.PALETTE);
-    let texture, palette;
+    let texture;
     if (patternOption !== undefined) {
-      let pattern = this.map.maze.patterns.find(x => x.name == patternOption.name);
+      let pattern;
+      if (patternOption.name == "__noise") 
+        pattern = pm.noisePattern(16,16);
+      else
+        pattern = this.map.maze.patterns.find(x => x.name == patternOption.name);
 
-      // TODO fall back to default palette instead
-      if (paletteOption == undefined)
-        throw "there is no default palette for patterns yet so you must include a palette";
-      else;
-        palette = this.map.maze.palettes.find(x => x.name == paletteOption.name);
-
-      texture = pm.createTexture(pattern.pixels, palette);
+      texture = pm.createTexture(pattern.pixels);
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(4,4);
-      mat = new THREE.MeshPhongMaterial({map: texture});
-      mat.needsUpdate = true;
+      texture.repeat.set(patternOption.tiling[0], patternOption.tiling[1]);
+      texture.rotation = 0.65;
+      matOptions.map = texture;
     }
 
+    let mat = new THREE.MeshPhongMaterial(matOptions);
+    mat.needsUpdate = true;
     let box = new THREE.Mesh(bg, mat);
 
     // scale
@@ -512,7 +512,6 @@ pm.Tile.prototype.build = function() {
 // --------------------------------------------------------------
 pm.Maze = function() {
   this.maps = [];
-  this.palettes = [];
   this.patterns = [];
   this.itemHandlers = [];
   this.startingItems = [];
@@ -552,9 +551,6 @@ pm.Maze.prototype.build = function() {
             m.name = block.name;
             m.tileGrid = block.tileGrid;
             this.maps.push(m);
-          case "paletteBlock":
-            this.palettes.push(block);
-            break;
           case "patternBlock":
             this.patterns.push(block);
             break;
@@ -841,11 +837,11 @@ pm.parser = function() {
       P.string("and"),
       r.__).desc("and"),
 
-    scale: (r) => P.seqObj(
+    tiling: (r) => P.seqObj(
       ["x", P.digits],
       P.string("x"),
       ["y", P.digits]
-    ).map(x => ([x.x, x.y == null ? 1 : x.y])),
+    ).map(t => [Number(t.x), Number(t.y)]),
 
     // ex. "x 1/5 y 1 z -7"
     // ex. "x 5 y 0 z 0"
@@ -1028,17 +1024,12 @@ pm.parser = function() {
     patternOption: (r) => P.seqObj(
       P.string("with pattern"),
       r.__,
-      ["name", r.quotedString],
-      ["scale", P.seq(
-        r.__,
-        r.scale).fallback([1,1])]
+      ["name", P.alt(
+        r.quotedString, 
+        P.string("noise").result("__noise")
+      )],
+      ["tiling", r.__.then(r.tiling).fallback([1,1])]
     ).map(x => Object.assign(x, {type: pm.featureOption.PATTERN})),
-
-    paletteOption: (r) => P.seqObj(
-      P.string("with palette"),
-      r.__,
-      ["name", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.featureOption.PALETTE})),
 
     promptOption: (r) => P.seqObj(
       P.string("with prompt"),
@@ -1063,7 +1054,6 @@ pm.parser = function() {
     boxOption: (r) => P.alt(
       r.colorOption,
       r.patternOption,
-      r.paletteOption,
       r.scaleOption,
       r.nudgeOption),
 
@@ -1134,27 +1124,6 @@ pm.parser = function() {
       r.__,
       r.endBlock
     ).node("keyBlock"),
-
-    paletteEntry: (r) => P.seqObj(
-      ["key", r.hexDigit],
-      r.__,
-      ["value", r.hexColor]),
-
-    paletteList: (r) =>
-      r.paletteEntry.sepBy(r.__),
-
-    startPalette: (r) => P.seq(
-      P.string("palette named"),
-      r.__)
-    .then(r.quotedString),
-
-    paletteBlock: (r) => P.seqObj(
-      ["name", r.startPalette],
-      r.__,
-      ["colors", r.paletteList],
-      r.__,
-      r.endBlock
-    ).node("paletteBlock"),
 
     startPattern: (r) => P.seq(
       P.string("pattern named"),
@@ -1296,7 +1265,6 @@ pm.parser = function() {
       r.aboutBlock,
       r.keyBlock,
       r.mapBlock,
-      r.paletteBlock,
       r.patternBlock,
       r.startingItemsBlock,
       r.startingTopicsBlock,
