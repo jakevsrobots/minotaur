@@ -33,6 +33,7 @@ key
       and a box 
         with color #ffffff
         with pattern "thin stripes" 4x4 
+        with palette "monochrome"
   M is for minotaur
   * is for lamp with 
       a point light 
@@ -50,6 +51,9 @@ about minotaur
   and a box 
     with scale 1/4
     with color #3386cc
+    with pattern "thick grid" 4x4
+    with palette "candy" 
+    
 
   and a chat 
     with prompt "talk to the minotaur"
@@ -77,6 +81,11 @@ end
 
 palette named "monochrome"
   0 #000000
+  1 #ffffff
+end
+
+palette named "candy"
+  0 #ff0000
   1 #ffffff
 end
 
@@ -189,6 +198,7 @@ pm.featureOption = {
   DISTANCE: Symbol("distance"),
   GREETING: Symbol("greeting"),
   INTENSITY: Symbol("intensity"),
+  PALETTE: Symbol("palette"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
   SCALE: Symbol("scale"),
@@ -298,6 +308,27 @@ pm.getOption = function(feature, optionSymbol) {
   return feature.options.find(x => x.type === optionSymbol);
 };
 
+pm.createTexture = function(pixels, palette) {
+  let width = 16;
+  let height = 16;
+  let data = new Uint8Array(3 * width * height);
+
+  for (let y=0; y<height; y++) {
+    for (let x=0; x<height; x++) {
+      let i = y * x.length + x;
+      let stride = i*3;
+      let colorId = pixels[y][x];
+      let colorHex = palette.colors[colorId].value;
+      let color = new THREE.Color(Number(colorHex));
+      data[stride] = color.r;
+      data[stride+1] = color.g;
+      data[stride+2] = color.b;
+    }
+  }
+
+  return new THREE.DataTexture(data, width, height, THREE.RGBFormat, THREE.UnsignedByteType);
+};
+
 // --------------------------------------------------------------
 // #map -- obj representing a map
 // --------------------------------------------------------------
@@ -395,14 +426,39 @@ pm.Tile.prototype.build = function() {
 
   if (this.hasFeature(pm.feature.BOX)) {
     let f = this.getFeature(pm.feature.BOX);
-
-    let bg = new THREE.BoxGeometry();
-    let hexColor = pm.getOption(f, pm.featureOption.COLOR);
+    let bg = new THREE.BoxBufferGeometry();
     let mat = new THREE.MeshPhongMaterial();
+
+    // color
+    let hexColor = pm.getOption(f, pm.featureOption.COLOR);
     if (hexColor !== undefined)
       mat.color.setHex(hexColor.color);
+
+    // texture
+    let patternOption = pm.getOption(f, pm.featureOption.PATTERN);
+    let paletteOption = pm.getOption(f, pm.featureOption.PALETTE);
+    let texture, palette;
+    if (patternOption !== undefined) {
+      let pattern = this.map.maze.patterns.find(x => x.name == patternOption.name);
+
+      // TODO fall back to default palette instead
+      if (paletteOption == undefined)
+        throw "there is no default palette for patterns yet so you must include a palette";
+      else;
+        palette = this.map.maze.palettes.find(x => x.name == paletteOption.name);
+
+      texture = pm.createTexture(pattern.pixels, palette);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(4,4);
+      mat = new THREE.MeshPhongMaterial({map: texture});
+      mat.needsUpdate = true;
+    }
+
     let box = new THREE.Mesh(bg, mat);
 
+    // scale
+    let scaleOption = pm.getOption(f, pm.featureOption.SCALE);
     let scale = pm.getOption(f, pm.featureOption.SCALE);
     if (scale !== undefined)
       box.scale.set(scale.scale, scale.scale, scale.scale);
@@ -978,6 +1034,12 @@ pm.parser = function() {
         r.scale).fallback([1,1])]
     ).map(x => Object.assign(x, {type: pm.featureOption.PATTERN})),
 
+    paletteOption: (r) => P.seqObj(
+      P.string("with palette"),
+      r.__,
+      ["name", r.quotedString]
+    ).map(x => Object.assign(x, {type: pm.featureOption.PALETTE})),
+
     promptOption: (r) => P.seqObj(
       P.string("with prompt"),
       r.__,
@@ -1001,6 +1063,7 @@ pm.parser = function() {
     boxOption: (r) => P.alt(
       r.colorOption,
       r.patternOption,
+      r.paletteOption,
       r.scaleOption,
       r.nudgeOption),
 
