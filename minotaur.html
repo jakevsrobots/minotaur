@@ -21,9 +21,9 @@ bugs:
 )
 
 map named "start"
-#####
-#1*M#
-#####
+#######
+#*1M* #
+#######
 end
 
 key
@@ -43,8 +43,8 @@ end
 
 about minotaur
   a wall
-  and a box 
-    with scale 1/4
+  and a ball 
+    with scale 2/4
     with color #00aaaa
     with pattern "thick stripes" 2x1
 
@@ -156,9 +156,54 @@ end
   ###########################################
 )
 </script>
+
+<!-- 
+// --------------------------------------------------------------
+// #css -- style sheet for ui
+// --------------------------------------------------------------
+-->
+
 <style type="text/css">
-body { margin: 0; }
-canvas { display: block; }
+body { margin: 0; background: color: #000; }
+
+#container {
+  width: 640px; 
+  height: 480px;
+  font-size: 18pt;
+  font-family: courier, monospace;
+}
+
+#message { 
+  display: block; 
+  position: absolute; 
+  top: 320px; 
+  left: 60px; 
+  width: 480px; 
+  height: 60px; 
+  background-color: #cfd3a6; 
+  padding: 20px; 
+}
+
+#buttons {
+  width: 480px;
+  display: block;
+  position: absolute;
+  top: 420px;
+  left: 60px;
+  height: 60px;
+  padding: 20px;
+}
+
+button {
+  font-size: 14pt; 
+  font-family: courier, monospace;
+  display: block;
+  float: left;
+  height: 26px;
+  margin-right: 10px; 
+  margin-bottom: 6px;
+}
+
 </style>
 
 <!-- the main code for pet minotaur lives here -->
@@ -173,12 +218,15 @@ const pm = {
   version: 0
 };
 
+let log = console.log;
+
 // --------------------------------------------------------------
 // #constants
 // --------------------------------------------------------------
 pm.featureOption = {
   COLOR: Symbol("color"),
   DISTANCE: Symbol("distance"),
+  GEOMETRY: Symbol("geometry"),
   GREETING: Symbol("greeting"),
   INTENSITY: Symbol("intensity"),
   PATTERN: Symbol("pattern"),
@@ -189,7 +237,8 @@ pm.featureOption = {
 };
 
 pm.feature = {
-  BOX: Symbol("box"),
+  BALL: Symbol("ball"),
+  MESH: Symbol("mesh"),
   CHAT: Symbol("chat"),
   ITEM: Symbol("item"),
   LIGHT: Symbol("light"),
@@ -212,6 +261,7 @@ pm.dir = {
 
 pm.state = {
   MOVING: Symbol("moving"),
+  CHATTING: Symbol("chatting"),
   READY: Symbol("ready")
 };
 
@@ -224,6 +274,13 @@ pm.command = {
   LOSE_ITEM: Symbol("lose"),
   SAY: Symbol("say")
 };
+
+pm.meshes = {
+  BOX: Symbol("box"),
+  BALL: Symbol("ball") 
+};
+
+pm.CLICK_COOLDOWN = 250; 
 
 // --------------------------------------------------------------
 // #util -- helpers
@@ -325,8 +382,6 @@ pm.noisePattern = function(width, height) {
     }
   }
 
-  console.log("p", pattern);
-
   return pattern;
 };
 
@@ -372,21 +427,6 @@ pm.Map.prototype.build = function() {
     if (tile.name == "start") 
       this.maze.player.warp(cell.x, cell.y);
   }
-
-  for (let x = 0; x<this.tileGrid.length; x++) {
-    for (let y = 0; y<this.tileGrid[x].length; y++) {
-      let cell = this.tileGrid[x][y];
-
-      // blank tile
-      if (cell == " ") 
-        continue;
-
-      let tile = this.setTile(cell, x, y);
-      tile.build();
-      if (tile.name == "start") 
-        this.maze.player.warp(x, y);
-    }
-  }
 };
 
 pm.Map.prototype.addTile = function(tileSymbol, x, y) {
@@ -397,6 +437,10 @@ pm.Map.prototype.addTile = function(tileSymbol, x, y) {
     tileSymbol, tileName, x, y, tileDef.features, this);
   this.live.push(tile);
   return tile;
+};
+
+pm.Map.prototype.getTile = function(x, y) {
+  return this.live.find(t => t.x==x && t.y==y);
 };
 
 // --------------------------------------------------------------
@@ -425,9 +469,22 @@ pm.Tile.prototype.build = function() {
   this.map.root.add(this.root);
   this.root.position.set(this.x, 0, this.y);
 
-  if (this.hasFeature(pm.feature.BOX)) {
-    let f = this.getFeature(pm.feature.BOX);
-    let bg = new THREE.BoxBufferGeometry();
+  // TODO -- iterate through features and add all of them instead of just
+  // checking for one. you should be able to have more than one mesh, etc.
+
+  if (this.hasFeature(pm.feature.MESH)) {
+    let f = this.getFeature(pm.feature.MESH);
+    
+    let bg;
+    switch (f.geometry) {
+      case pm.meshes.BOX:
+        bg = new THREE.BoxBufferGeometry();
+        break;
+      case pm.meshes.BALL:
+        bg = new THREE.SphereBufferGeometry();
+        break;
+    };
+
     let matOptions = {};
 
     // color
@@ -455,15 +512,15 @@ pm.Tile.prototype.build = function() {
 
     let mat = new THREE.MeshPhongMaterial(matOptions);
     mat.needsUpdate = true;
-    let box = new THREE.Mesh(bg, mat);
+    let mesh = new THREE.Mesh(bg, mat);
 
     // scale
     let scaleOption = pm.getOption(f, pm.featureOption.SCALE);
     let scale = pm.getOption(f, pm.featureOption.SCALE);
     if (scale !== undefined)
-      box.scale.set(scale.scale, scale.scale, scale.scale);
+      mesh.scale.set(scale.scale, scale.scale, scale.scale);
 
-    this.root.add(box);
+    this.root.add(mesh);
   } 
 
   if (this.hasFeature(pm.feature.LIGHT)) {
@@ -512,6 +569,7 @@ pm.Tile.prototype.build = function() {
 // --------------------------------------------------------------
 pm.Maze = function() {
   this.maps = [];
+  this.currentMap = null;
   this.patterns = [];
   this.itemHandlers = [];
   this.startingItems = [];
@@ -525,7 +583,10 @@ pm.Maze = function() {
 };
 
 pm.Maze.prototype.build = function() {
+  // these two have to run in this order
   this.setupGraphics();
+  this.ui = new pm.UI(this);
+
   for (let s of document.scripts) {
     if (s.type == "text/minotaur") {
       let code = s.innerText;
@@ -592,7 +653,6 @@ pm.Maze.prototype.setupGraphics = function() {
   this.root.add(light);
   this.renderer = new THREE.WebGLRenderer();
   this.renderer.setSize(width, height);
-  document.body.appendChild(this.renderer.domElement);
 };
 
 pm.Maze.prototype.mergeTile = function(name, features) {
@@ -617,26 +677,18 @@ pm.Maze.prototype.play = function() {
   else 
     throw "you must name at least one map 'start'";
 
+  this.updateMaze();
   this.animate();
 };
 
 pm.Maze.prototype.enterMap = function(m) {
-  this.player.map = m;
+  this.currentMap = this.player.map = m;
   m.build();
   this.root.add(m.root);
 };
 
 pm.Maze.prototype.animate = function() {
-  /*
-  this.box.rotation.y += 0.02;
-  this.box.rotation.z += 0.03;
-  this.box.rotation.x += 0.05;
-  */
-
-  //this.floor.rotation.x -= 0.1;
-
   requestAnimationFrame(this.animate.bind(this));
-
   TWEEN.update();
   this.renderer.render(this.scene, this.camera);
 };
@@ -658,6 +710,36 @@ pm.Maze.prototype.move = function(direction) {
     case pm.key.RIGHT:
       this.player.turnRight();
       break;
+  }
+};
+
+// trigger events on the player's current cell
+// update systems
+// show the player's options
+pm.Maze.prototype.updateMaze = function() {
+  // the cell in front of the player
+  let [fx,fy] = pm.offsetPoint(this.player.x, this.player.y, this.player.dir);
+  let tile = this.currentMap.getTile(fx, fy);
+  let ui = this.ui;
+  if (tile !== undefined) {
+    let chatOptions = tile.featureList
+      .filter(f => f.type === pm.feature.CHAT)
+      .map(function(cf) {
+        let promptOption = pm.getOption(cf, pm.featureOption.PROMPT);
+        let text = tile.name;
+
+        if (promptOption !== undefined)
+          text = promptOption.text;
+
+        let onclick = () => ui.chat(cf);
+
+        return {
+          text,
+          onclick
+        };
+      });
+
+    this.ui.showOptions(chatOptions);
   }
 };
 
@@ -684,9 +766,11 @@ pm.Player.prototype.stepForward = function() {
   let [x, y] = pm.offsetPoint(this.x, this.y, this.dir);
 
   if (this.map.checkForWall(x, y)) 
-    console.log("wall"); // todo bump anim
+    log("wall"); // todo bump anim
   else {
-    this.maze.state = pm.state.MOVING;
+    this.maze.ui.clear();
+    this.maze.ui.state = pm.state.MOVING;
+
     let pos = {x: this.x, y: this.y};
 
     let tween = new TWEEN
@@ -697,6 +781,7 @@ pm.Player.prototype.stepForward = function() {
         this.maze.state = pm.state.READY
         this.x = x;
         this.y = y;
+        this.maze.updateMaze();
       }.bind(this))
       .easing(TWEEN.Easing.Quadratic.Out)
       .start();
@@ -708,9 +793,11 @@ pm.Player.prototype.stepBack = function() {
     this.x, this.y, pm.flipDir(this.dir));
 
   if (this.map.checkForWall(x, y)) 
-    console.log("wall"); // todo bump anim
+    log("wall"); // todo bump anim
   else {
-    this.maze.state = pm.state.MOVING;
+    this.maze.ui.clear();
+    this.maze.ui.state = pm.state.MOVING;
+
     let pos = {x: this.x, y: this.y};
 
     let tween = new TWEEN
@@ -721,6 +808,7 @@ pm.Player.prototype.stepBack = function() {
         this.maze.state = pm.state.READY
         this.x = x;
         this.y = y;
+        this.maze.updateMaze();
       }.bind(this))
       .easing(TWEEN.Easing.Quadratic.Out)
       .start();
@@ -731,6 +819,7 @@ pm.Player.prototype.turnLeft = function() {
   this.dir = pm.dirLeft(this.dir);
 
   this.maze.state = pm.state.MOVING;
+  this.maze.ui.clear();
 
   let rot = {y: this.root.rotation.y};
   let tween = new TWEEN
@@ -738,7 +827,8 @@ pm.Player.prototype.turnLeft = function() {
     .to({y: "+" + Math.PI/2}, 250)
     .onUpdate(() => this.root.rotation.y = rot.y)
     .onComplete(function() {
-      this.maze.state = pm.state.READY
+      this.maze.state = pm.state.READY;
+      this.maze.updateMaze();
     }.bind(this))
     .easing(TWEEN.Easing.Quadratic.Out)
     .start();
@@ -748,6 +838,7 @@ pm.Player.prototype.turnRight = function() {
   this.dir = pm.dirRight(this.dir);
 
   this.maze.state = pm.state.MOVING;
+  this.maze.ui.clear();
 
   let rot = {y: this.root.rotation.y};
   let tween = new TWEEN
@@ -755,10 +846,104 @@ pm.Player.prototype.turnRight = function() {
     .to({y: "-" + Math.PI/2}, 250)
     .onUpdate(() => this.root.rotation.y = rot.y)
     .onComplete(function() {
-      this.maze.state = pm.state.READY
+      this.maze.state = pm.state.READY;
+      this.maze.updateMaze();
     }.bind(this))
     .easing(TWEEN.Easing.Quadratic.Out)
     .start();
+};
+
+// --------------------------------------------------------------
+// #ui -- ui class
+// --------------------------------------------------------------
+pm.UI = function(maze) {
+  this.maze = maze;
+  this.container = document.createElement("div");
+  this.root = document.createElement("div");
+  this.root.id = "ui-root";
+  this.messageBox = undefined;
+  this.buttonBox = undefined;
+
+  this.container.id = "container";
+  this.container.appendChild(maze.renderer.domElement);
+  this.container.appendChild(this.root);
+  document.body.appendChild(this.container);
+}
+
+pm.UI.prototype.showMessage = function(msg) {
+  this.messageBox = document.createElement("div");
+  this.messageBox.setAttribute("id", "message");
+  this.root.appendChild(this.messageBox);
+  this.messageBox.innerHTML = "<span>" + msg + "</span>";
+};
+
+pm.UI.prototype.showTopics = function(cf) {
+  let topics = cf.options.filter(o => o.type == pm.featureOption.TOPIC);
+  let ui = this;
+  let options = topics.map(function(topic) {
+    let text, onclick;
+
+    text = topic.name;
+    onclick = () => ui.showMessageSequence(topic.text, () => ui.chat(cf));
+
+    return { text, onclick };
+  });
+
+  options.push({text: "bye", onclick: () => ui.endChat()});
+
+  this.showOptions(options);
+};
+
+pm.UI.prototype.showOptions = function(options) {
+  this.buttonBox = document.createElement("div");
+  this.buttonBox.setAttribute("id", "buttons");
+
+  for (let option of options) {
+    let button = document.createElement("button");
+    button.innerText = option.text;
+    this.buttonBox.appendChild(button);
+
+    button.onclick = option.onclick;
+  }
+
+  this.root.appendChild(this.buttonBox);
+};
+
+pm.UI.prototype.clear = function() {
+  this.root.innerHTML = "";
+};
+
+pm.UI.prototype.chat = function(cf) {
+  this.maze.state = pm.state.CHATTING;
+  this.clear();
+  let greeting = cf.options.find(o => o.type == pm.featureOption.GREETING);
+  if (greeting !== undefined)
+    this.showMessage(greeting.text);
+
+  this.showTopics(cf);
+};
+
+pm.UI.prototype.endChat = function() {
+  this.maze.state = pm.state.READY;
+  this.clear();
+  this.maze.updateMaze();
+};
+
+pm.UI.prototype.showMessageSequence = function(messages, doneCallback) {
+  let ui = this;
+  this.clear();
+  if (messages.length > 0) {
+    this.showMessage(messages[0]);
+    setTimeout(function() {
+      window.onclick = function() {
+        ui.showMessageSequence(messages.slice(1), doneCallback);
+        window.onclick = undefined;
+      };
+    }, pm.CLICK_COOLDOWN);
+  } else {
+    this.clear();
+    doneCallback();
+  }
 };
 
 // --------------------------------------------------------------
@@ -859,6 +1044,8 @@ pm.parser = function() {
       ["z", r.fraction]
     ),
 
+    // todo: 
+    //   "1/2 minus 1/8 plus 1/15"
     fraction: (r) => P.seqObj(
       ["sign", P.alt(P.string("-"), P.string("+")).fallback("+")],
       ["numerator", P.digits],
@@ -1051,16 +1238,21 @@ pm.parser = function() {
       ["text", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.featureOption.GREETING})),
 
-    boxOption: (r) => P.alt(
+    meshOption: (r) => P.alt(
       r.colorOption,
       r.patternOption,
       r.scaleOption,
       r.nudgeOption),
 
-    boxFeature: (r) => P.seqObj(
-      P.string("box"),
-      ["options", optionParser(r, r.boxOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.BOX})),
+    geometryName: (r) => P.alt(
+      P.string("box").result(pm.meshes.BOX),
+      P.string("ball").result(pm.meshes.BALL)
+    ),
+
+    meshFeature: (r) => P.seqObj(
+      ["geometry", r.geometryName],
+      ["options", optionParser(r, r.meshOption)]
+    ).map(x => Object.assign(x, {type: pm.feature.MESH})),
 
     lightOption: (r) => P.alt(
       r.colorOption,
@@ -1106,7 +1298,7 @@ pm.parser = function() {
     feature: (r) => r.article
       .then(P.alt(
         r.actionFeature,
-        r.boxFeature,
+        r.meshFeature,
         r.chatFeature,
         r.itemFeature,
         r.lightFeature,
