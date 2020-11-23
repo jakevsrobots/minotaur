@@ -22,30 +22,35 @@ bugs:
 
 map named "start"
 #######
-#*1M* #
-#######
+#*1 * #
+##### #
+    # #
+    # #
+##### #####
+#*   *  M #
+###########
 end
 
 key
-  1 is for start
-  # is for wall with
+  1 is for "start"
+  # is for "wall" with
       a wall 
       and a box 
-        with color #ffffff
+        with color #8e5b9e
         with pattern noise
-  M is for minotaur
-  * is for lamp with 
+  M is for "minotaur"
+  * is for "lamp" with 
       a point light 
         with distance 5
-        with color #aa2240
+        with color #cbbdad
         with intensity 2
 end
 
-about minotaur
+about "minotaur"
   a wall
   and a ball 
     with scale 2/4
-    with color #00aaaa
+    with color #2781ba
     with pattern "thick stripes" 2x1
 
   and a chat 
@@ -67,7 +72,7 @@ starting topics
   "fire"
 end
 
-to use loupe with minotaur
+to use "loupe" with "minotaur"
   say "the minotaur has fleas"
   add topic "fleas"
 end
@@ -164,7 +169,18 @@ end
 -->
 
 <style type="text/css">
-body { margin: 0; background: color: #000; }
+body { margin: 0; }
+canvas {
+/* Permalink - use to edit and share this gradient: https://colorzilla.com/gradient-editor/#efc5ca+0,d24b5a+50,ba2737+51,f18e99+100;Red+Gloss+%233 */
+background: #efc5ca; /* Old browsers */
+background: -moz-linear-gradient(top,  #efc5ca 0%, #d24b5a 50%, #ba2737 51%, #f18e99 100%); /* FF3.6-15 */
+background: -webkit-linear-gradient(top,  #efc5ca 0%,#d24b5a 50%,#ba2737 51%,#f18e99 100%); /* Chrome10-25,Safari5.1-6 */
+background: linear-gradient(to bottom,  #efc5ca 0%,#d24b5a 50%,#ba2737 51%,#f18e99 100%); /* W3C, IE10+, FF16+, Chrome26+, Opera12+, Safari7+ */
+filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#efc5ca', endColorstr='#f18e99',GradientType=0 ); /* IE6-9 */
+
+  background-repeat: no-repeat;
+
+}
 
 #container {
   width: 640px; 
@@ -180,7 +196,8 @@ body { margin: 0; background: color: #000; }
   left: 60px; 
   width: 480px; 
   height: 60px; 
-  background-color: #cfd3a6; 
+  background-color: #cbbdad; 
+  color: #3a3e47;
   padding: 20px; 
 }
 
@@ -215,7 +232,8 @@ button {
 // https://github.com/jakevsrobots/minotaur
 
 const pm = {
-  version: 0
+  version: 0,
+  q: []
 };
 
 let log = console.log;
@@ -281,6 +299,10 @@ pm.meshes = {
 };
 
 pm.CLICK_COOLDOWN = 250; 
+pm.KEY_REPEAT_WARMUP = 400; 
+
+pm.SMOOTH_ANIM_TIME = 200;
+pm.NORMAL_ANIM_TIME = 250;
 
 // --------------------------------------------------------------
 // #util -- helpers
@@ -498,7 +520,7 @@ pm.Tile.prototype.build = function() {
     if (patternOption !== undefined) {
       let pattern;
       if (patternOption.name == "__noise") 
-        pattern = pm.noisePattern(16,16);
+        pattern = pm.noisePattern(64,64);
       else
         pattern = this.map.maze.patterns.find(x => x.name == patternOption.name);
 
@@ -510,7 +532,7 @@ pm.Tile.prototype.build = function() {
       matOptions.map = texture;
     }
 
-    let mat = new THREE.MeshPhongMaterial(matOptions);
+    let mat = new THREE.MeshLambertMaterial(matOptions);
     mat.needsUpdate = true;
     let mesh = new THREE.Mesh(bg, mat);
 
@@ -583,6 +605,7 @@ pm.Maze = function() {
 };
 
 pm.Maze.prototype.build = function() {
+  this.setupInput();
   // these two have to run in this order
   this.setupGraphics();
   this.ui = new pm.UI(this);
@@ -635,7 +658,7 @@ pm.Maze.prototype.build = function() {
 
 pm.Maze.prototype.setupGraphics = function() {
   this.scene = new THREE.Scene();
-  this.scene.background = new THREE.Color(0x87ceeb);
+  //this.scene.background = new THREE.Color(0x5b6b9e);
   this.scene.add(this.root);
 
   let width = 640;
@@ -651,8 +674,66 @@ pm.Maze.prototype.setupGraphics = function() {
   this.root.add(this.player.root);
   let light = new THREE.AmbientLight(0x404040, 1);
   this.root.add(light);
-  this.renderer = new THREE.WebGLRenderer();
+  this.renderer = new THREE.WebGLRenderer({alpha: true});
   this.renderer.setSize(width, height);
+};
+
+// --------------------------------------------------------------
+// #keys -- change key bindings here for now
+// --------------------------------------------------------------
+pm.Maze.prototype.setupInput = function() {
+  let p = this.player;
+
+  kd.UP.press(p.stepForward.bind(p));
+  kd.DOWN.press(p.stepBack.bind(p));
+  kd.LEFT.press(p.turnLeft.bind(p));
+  kd.RIGHT.press(p.turnRight.bind(p));
+
+  let release = function() {
+    log("release", p);
+    clearTimeout(p.runTimer);
+    p.runTimer = null;
+    p.running = false;
+  };
+
+  kd.UP.up(release);
+  kd.DOWN.up(release);
+  kd.LEFT.up(release);
+  kd.RIGHT.up(release);
+};
+
+pm.Maze.prototype.checkHeldKeys = function() {
+  log("check held keys. running", this.player.running);
+  if (this.player.running) {
+    if (kd.UP.isDown()) 
+      this.player.stepForward(true);
+    else if (kd.DOWN.isDown())
+      this.player.stepBack(true);
+    else if (kd.LEFT.isDown())
+      this.player.turnLeft(true);
+    else if (kd.RIGHT.isDown())
+      this.player.turnRight(true);
+    else {
+      this.player.running = false;
+      this.player.runTimer = null;
+    }
+  } else if(this.anyMovementKeys()) {
+    if (this.player.runTimer === null) {
+      console.log("setting up timer");
+      this.player.runTimer = setTimeout(function() {
+        log("timer up");
+        this.player.running = true;
+        this.player.runTimer = null;
+        this.checkHeldKeys();
+      }.bind(this), pm.KEY_REPEAT_WARMUP);
+    } else {
+      log("already have run timer", this.player.runTimer);
+    }
+  }
+};
+
+pm.Maze.prototype.anyMovementKeys = function() {
+  return (kd.UP.isDown() || kd.DOWN.isDown() || kd.LEFT.isDown() || kd.RIGHT.isDown());
 };
 
 pm.Maze.prototype.mergeTile = function(name, features) {
@@ -690,33 +771,16 @@ pm.Maze.prototype.enterMap = function(m) {
 pm.Maze.prototype.animate = function() {
   requestAnimationFrame(this.animate.bind(this));
   TWEEN.update();
+  kd.tick();
   this.renderer.render(this.scene, this.camera);
-};
-
-pm.Maze.prototype.move = function(direction) {
-  if (this.state !== pm.state.READY)
-    return;
-
-  switch (direction) {
-    case pm.key.UP:
-      this.player.stepForward();
-      break;
-    case pm.key.DOWN:
-      this.player.stepBack();
-      break;
-    case pm.key.LEFT:
-      this.player.turnLeft();
-      break;
-    case pm.key.RIGHT:
-      this.player.turnRight();
-      break;
-  }
 };
 
 // trigger events on the player's current cell
 // update systems
 // show the player's options
 pm.Maze.prototype.updateMaze = function() {
+  let stopPlayer = false;
+
   // the cell in front of the player
   let [fx,fy] = pm.offsetPoint(this.player.x, this.player.y, this.player.dir);
   let tile = this.currentMap.getTile(fx, fy);
@@ -739,8 +803,14 @@ pm.Maze.prototype.updateMaze = function() {
         };
       });
 
+    if (chatOptions.length > 0)
+      stopPlayer = true;
+
     this.ui.showOptions(chatOptions);
   }
+
+  if (!stopPlayer)
+    this.checkHeldKeys();
 };
 
 // --------------------------------------------------------------
@@ -753,7 +823,10 @@ pm.Player = function(maze) {
   this.y = 0;
   this.dir = pm.dir.EAST;
   this.root = new THREE.Object3D();
-  this.root.rotateY(-Math.PI/2);
+  //this.root.rotateY(-Math.PI/2);
+  this.root.rotation.set(0, -Math.PI/2, 0);
+  this.running = false;
+  this.runTimer = null;
 };
 
 pm.Player.prototype.warp = function(x, y) {
@@ -762,95 +835,175 @@ pm.Player.prototype.warp = function(x, y) {
   this.root.position.set(x, 0, y);
 };
 
-pm.Player.prototype.stepForward = function() {
+pm.Player.prototype.stepForward = function(smooth) {
+  if (this.maze.state !== pm.state.READY) 
+    return;
+
+  this.runTimer = null;
+
   let [x, y] = pm.offsetPoint(this.x, this.y, this.dir);
 
-  if (this.map.checkForWall(x, y)) 
+  if (this.map.checkForWall(x, y)) {
     log("wall"); // todo bump anim
-  else {
+  } else {
     this.maze.ui.clear();
-    this.maze.ui.state = pm.state.MOVING;
+    this.maze.state = pm.state.MOVING;
 
     let pos = {x: this.x, y: this.y};
+    let easing, time;
+
+    if (!smooth) {
+      easing = TWEEN.Easing.Quadratic.Out;
+      time = pm.NORMAL_ANIM_TIME;
+    } else {
+      easing = TWEEN.Easing.Linear.None;
+      time = pm.SMOOTH_ANIM_TIME;
+    }
 
     let tween = new TWEEN
       .Tween(pos)
-      .to({x, y}, 250)
+      .to({x, y}, time)
       .onUpdate(() => this.root.position.set(pos.x, 0, pos.y))
       .onComplete(function() {
         this.maze.state = pm.state.READY
         this.x = x;
         this.y = y;
+        this.snap();
         this.maze.updateMaze();
       }.bind(this))
-      .easing(TWEEN.Easing.Quadratic.Out)
+      .easing(easing)
       .start();
   }
 };
 
-pm.Player.prototype.stepBack = function() {
+pm.Player.prototype.stepBack = function(smooth) {
+  if (this.maze.state != pm.state.READY)
+    return;
+
+  this.runTimer = null;
+
   let [x, y] = pm.offsetPoint(
     this.x, this.y, pm.flipDir(this.dir));
 
-  if (this.map.checkForWall(x, y)) 
+  if (this.map.checkForWall(x, y)) {
     log("wall"); // todo bump anim
-  else {
+  } else {
     this.maze.ui.clear();
-    this.maze.ui.state = pm.state.MOVING;
+    this.maze.state = pm.state.MOVING;
 
     let pos = {x: this.x, y: this.y};
+    let easing, time;
+
+    if (!smooth) {
+      easing = TWEEN.Easing.Quadratic.Out;
+      time = pm.NORMAL_ANIM_TIME;
+    } else {
+      easing = TWEEN.Easing.Linear.None;
+      time = pm.SMOOTH_ANIM_TIME;
+    }
 
     let tween = new TWEEN
       .Tween(pos)
-      .to({x, y}, 250)
+      .to({x, y}, time)
       .onUpdate(() => this.root.position.set(pos.x, 0, pos.y))
       .onComplete(function() {
         this.maze.state = pm.state.READY
         this.x = x;
         this.y = y;
+        this.snap();
         this.maze.updateMaze();
       }.bind(this))
-      .easing(TWEEN.Easing.Quadratic.Out)
+      .easing(easing)
       .start();
   }
 };
 
-pm.Player.prototype.turnLeft = function() {
+pm.Player.prototype.turnLeft = function(smooth) {
+  if (this.maze.state != pm.state.READY)
+    return;
+
+  this.runTimer = null;
+
   this.dir = pm.dirLeft(this.dir);
 
   this.maze.state = pm.state.MOVING;
   this.maze.ui.clear();
 
   let rot = {y: this.root.rotation.y};
+  let easing, time;
+
+  if (!smooth) {
+    easing = TWEEN.Easing.Quadratic.Out;
+    time = pm.NORMAL_ANIM_TIME;
+  } else {
+    easing = TWEEN.Easing.Linear.None;
+    time = pm.SMOOTH_ANIM_TIME;
+  }
+
   let tween = new TWEEN
     .Tween(rot)
-    .to({y: "+" + Math.PI/2}, 250)
+    .to({y: "+" + Math.PI/2}, time)
     .onUpdate(() => this.root.rotation.y = rot.y)
     .onComplete(function() {
       this.maze.state = pm.state.READY;
+      this.snap();
       this.maze.updateMaze();
     }.bind(this))
-    .easing(TWEEN.Easing.Quadratic.Out)
+    .easing(easing)
     .start();
 };
 
-pm.Player.prototype.turnRight = function() {
+pm.Player.prototype.turnRight = function(smooth) {
+  if (this.maze.state != pm.state.READY)
+    return;
+
+  this.runTimer = null;
+
   this.dir = pm.dirRight(this.dir);
 
   this.maze.state = pm.state.MOVING;
   this.maze.ui.clear();
 
   let rot = {y: this.root.rotation.y};
+  let easing, time;
+
+  if (!smooth) {
+    easing = TWEEN.Easing.Quadratic.Out;
+    time = pm.NORMAL_ANIM_TIME;
+  } else {
+    easing = TWEEN.Easing.Linear.None;
+    time = pm.SMOOTH_ANIM_TIME;
+  }
+
   let tween = new TWEEN
     .Tween(rot)
-    .to({y: "-" + Math.PI/2}, 250)
+    .to({y: "-" + Math.PI/2}, time)
     .onUpdate(() => this.root.rotation.y = rot.y)
     .onComplete(function() {
       this.maze.state = pm.state.READY;
+      this.snap();
       this.maze.updateMaze();
     }.bind(this))
-    .easing(TWEEN.Easing.Quadratic.Out)
+    .easing(easing)
     .start();
+};
+
+pm.Player.prototype.snap = function() {
+  this.root.position.set(this.x, 0, this.y);
+  switch (this.dir) {
+    case pm.dir.NORTH:
+      this.root.rotation.set(0, 0, 0);
+      break;
+    case pm.dir.SOUTH:
+      this.root.rotation.set(0, Math.PI, 0);
+      break;
+    case pm.dir.WEST:
+      this.root.rotation.set(0, Math.PI/2, 0);
+      break;
+    case pm.dir.EAST:
+      this.root.rotation.set(0, -Math.PI/2, 0);
+      break;
+  }
 };
 
 // --------------------------------------------------------------
@@ -875,6 +1028,8 @@ pm.UI.prototype.showMessage = function(msg) {
   this.messageBox.setAttribute("id", "message");
   this.root.appendChild(this.messageBox);
   this.messageBox.innerHTML = "<span>" + msg + "</span>";
+
+  //let tween = new TWEEN.Tween();
 };
 
 pm.UI.prototype.showTopics = function(cf) {
@@ -953,35 +1108,9 @@ pm.main = function() {
   let noload = document.getElementById("noload");
   noload.parentNode.removeChild(noload);
 
-  document.addEventListener("keydown", pm.keydown, false);
-
   pm.liveMaze = new pm.Maze();
   pm.liveMaze.build();
   pm.liveMaze.play();
-};
-
-pm.keydown = function(event) {
-  let keycode = event.which;
-  let caught = true;
-  switch (keycode) {
-    case 38:
-      pm.liveMaze.move(pm.key.UP);
-      break;
-    case 40:
-      pm.liveMaze.move(pm.key.DOWN);
-      break;
-    case 37:
-      pm.liveMaze.move(pm.key.LEFT);
-      break;
-    case 39:
-      pm.liveMaze.move(pm.key.RIGHT);
-      break;
-    default:
-      caught = false;
-  }
-
-  if (caught)
-    event.preventDefault();
 };
 
 // --------------------------------------------------------------
@@ -1129,18 +1258,13 @@ pm.parser = function() {
 
     startKey: (r) => P.string("key"),
 
-    tileName: (r) => P.seq(
-      P.regexp(/[a-zA-Z_-]/),
-      P.regexp(/[a-zA-Z0-9_-]/).many().tieWith("")
-    ).tieWith(""),
-
     // test: testParseKeyAssignment
     keyAssignment: (r) => P.seqObj(
         ["symbol", r.tileSymbol],
         r.__,
         P.string("is for"),
         r.__,
-        ["name", r.tileName]
+        ["name", r.quotedString]
     ),
 
     // test: testParseInKeyFeatureList
@@ -1335,7 +1459,7 @@ pm.parser = function() {
     startAboutBlock: (r) => P.seq(
       P.string("about"),
       r.__)
-    .then(r.tileName),
+    .then(r.quotedString),
 
     aboutBlock: (r) => P.seqObj(
       ["name", r.startAboutBlock],
@@ -1356,7 +1480,7 @@ pm.parser = function() {
     startStartingItemsBlock: (r) => P.seq(
       P.string("starting items for"),
       r.__)
-    .then(r.tileName),
+    .then(r.quotedString),
 
     startingItemsBlock: (r) => P.seqObj(
       ["name", r.startStartingItemsBlock],
@@ -1366,21 +1490,21 @@ pm.parser = function() {
         r.__,
         P.string("of"),
         r.__,
-        r.tileName,
+        r.quotedString,
       ).sepBy(r.__)],
       r.__,
       r.endBlock
-    ).node("aboutBlock"),
+    ).node("startingItemsBlock"),
 
     startUseItemBlock: (r) => P.seqObj(
       P.string("to use"),
       r.__,
-      ["name", r.tileName],
+      ["name", r.quotedString],
       ["target", P.seq(
         r.__,
         P.string("with"),
         r.__)
-        .then(r.tileName)
+        .then(r.quotedString)
         .fallback(null)
       ]
     ),
@@ -1402,19 +1526,19 @@ pm.parser = function() {
       r.__,
       ["quantity", r.quantity],
       r.__,
-      ["itemName", r.tileName]
+      ["itemName", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.GAIN_ITEM})),
 
     commandGoodbye: (r) => P.seqObj(
       P.string("goodbye"),
       r.__,
-      ["name", r.tileName]
+      ["name", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.GOODBYE})),
 
     commandHello: (r) => P.seqObj(
       P.string("hello"),
       r.__,
-      ["name", r.tileName]
+      ["name", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.HELLO})),
 
     commandLoseItem: (r) => P.seqObj(
@@ -1422,7 +1546,7 @@ pm.parser = function() {
       r.__,
       r.quantity,
       r.__,
-      ["itemName", r.tileName]
+      ["itemName", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.LOSE_ITEM})),
 
     commandSay: (r) => P.seqObj(
@@ -1536,11 +1660,12 @@ pm.parser = function() {
 
     tests({
       "testParseKeyAssignment": function() {
-        let code = "1 is for some_name";
+        let code = "1 is for 'some name'";
         let p = pm.parser().keyAssignment;
         let v = p.tryParse(code);
-        eq(v.name, "some_name")
+        eq(v.name, "some name")
       },
+
       "testParseInKeyFeatureList": function() {
         let code = "with a wall and a box";
         let p = pm.parser().inKeyFeatureList;
@@ -1548,6 +1673,7 @@ pm.parser = function() {
         eq(v.length, 2);
         eq(v[0].type, pm.feature.WALL);
       },
+
       "testParseFeatureList": function() {
         let code = "a wall and a box";
         let p = pm.parser().featureList;
@@ -1555,27 +1681,29 @@ pm.parser = function() {
         eq(v.length, 2);
         eq(v[0].type, pm.feature.WALL);
       },
+
       "testParseKey": function() {
-        let code = `1 is for start with a wall`;
+        let code = `1 is for "start" with a wall`;
         let p = pm.parser().key;
         let v = p.tryParse(code);
       },
+
       "testParseMaze": function() {
         let code = `
           key
-            1 is for start
-            # is for panel with a wall and
+            1 is for "start"
+            # is for "panel" with a wall and
                             a box with color #8833aa
                                   with pattern "thin stripes" 4x4
-            * is for torch with a point light with color #39FF14 
+            * is for "torch" with a point light with color #39FF14 
                                           with intensity 4/5
-            ? is for lantern with a point light with color #aa2164
-            ! is for potion with an item
+            ? is for "lantern" with a point light with color #aa2164
+            ! is for "potion" with an item
                              and a box with color #ff0000
                              and a point light with color #ff0034
-            M is for minotaur
-            & is for heart with an undroppable item
-            o is for loupe with an undroppable item
+            M is for "minotaur"
+            & is for "heart" with an undroppable item
+            o is for "loupe" with an undroppable item
           end
 
           map named "start"
@@ -1596,6 +1724,7 @@ pm.parser = function() {
           let p = pm.parser().maze;
           let v = p.tryParse(code);
       },
+
       "testParseHexColor": function() {
         let p = pm.parser().hexColor;
 
@@ -4000,6 +4129,522 @@ TWEEN.Interpolation = {
 	}
 
 })(this);
+</script>
+
+  <script>
+/*! keydrown - v1.2.7 - 2018-12-19 - http://jeremyckahn.github.com/keydrown */
+;(function (window) {
+
+var util = (function () {
+
+  var util = {};
+
+  /**
+   * @param {Object} obj The Object to iterate through.
+   * @param {function(*, string)} iterator The function to call for each property.
+   */
+  util.forEach = function (obj, iterator) {
+    var prop;
+    for (prop in obj) {
+      if (obj.hasOwnProperty(prop)) {
+        iterator(obj[prop], prop);
+      }
+    }
+  };
+  var forEach = util.forEach;
+
+
+  /**
+   * Create a transposed copy of an Object.
+   *
+   * @param {Object} obj
+   * @return {Object}
+   */
+  util.getTranspose = function (obj) {
+    var transpose = {};
+
+    forEach(obj, function (val, key) {
+      transpose[val] = key;
+    });
+
+    return transpose;
+  };
+
+
+  /**
+   * Implementation of Array#indexOf because IE<9 doesn't support it.
+   *
+   * @param {Array} arr
+   * @param {*} val
+   * @return {number} Index of the found element or -1 if not found.
+   */
+  util.indexOf = function (arr, val) {
+    if (arr.indexOf) {
+      return arr.indexOf(val);
+    }
+
+    var i, len = arr.length;
+    for (i = 0; i < len; i++) {
+      if (arr[i] === val) {
+        return i;
+      }
+    }
+
+    return -1;
+  };
+  var indexOf = util.indexOf;
+
+
+  /**
+   * Push a value onto an array if it is not present in the array already.  Otherwise, this is a no-op.
+   *
+   * @param {Array} arr
+   * @param {*} val
+   * @return {boolean} Whether or not the value was added to the array.
+   */
+  util.pushUnique = function (arr, val) {
+    if (indexOf(arr, val) === -1) {
+      arr.push(val);
+      return true;
+    }
+
+    return false;
+  };
+
+
+  /**
+   * Remove a value from an array.  Assumes there is only one instance of the
+   * value present in the array.
+   *
+   * @param {Array} arr
+   * @param {*} val
+   * @return {*} The value that was removed from arr.  Returns undefined if
+   * nothing was removed.
+   */
+  util.removeValue = function (arr, val) {
+    var index = indexOf(arr, val);
+
+    if (index !== -1) {
+      return arr.splice(index, 1)[0];
+    }
+  };
+
+
+  /**
+   * Cross-browser function for listening for and handling an event on the
+   * document element.
+   *
+   * @param {string} eventName
+   * @param {function} handler
+   */
+  util.documentOn = function (eventName, handler) {
+    if (window.addEventListener) {
+      window.addEventListener(eventName, handler, false);
+    } else if (document.attachEvent) {
+      document.attachEvent('on' + eventName, handler);
+    }
+  };
+
+
+  /**
+   * Shim for requestAnimationFrame.  See:
+   * http://paulirish.com/2011/requestanimationframe-for-smart-animating/
+   */
+  util.requestAnimationFrame = (function () {
+    return window.requestAnimationFrame  ||
+      window.webkitRequestAnimationFrame ||
+      window.mozRequestAnimationFrame    ||
+      function( callback ){
+        window.setTimeout(callback, 1000 / 60);
+      };
+  })();
+
+
+  /**
+   * An empty function.  NOOP!
+   */
+  util.noop = function () {};
+
+  return util;
+
+}());
+
+/**
+ * Lookup table of keys to keyCodes.
+ *
+ * @type {Object.<number>}
+ */
+var KEY_MAP = {
+  'ZERO': 48,
+  'ONE': 49,
+  'TWO': 50,
+  'THREE': 51,
+  'FOUR': 52,
+  'FIVE': 53,
+  'SIX': 54,
+  'SEVEN': 55,
+  'EIGHT': 56,
+  'NINE': 57,
+  'A': 65,
+  'B': 66,
+  'C': 67,
+  'D': 68,
+  'E': 69,
+  'F': 70,
+  'G': 71,
+  'H': 72,
+  'I': 73,
+  'J': 74,
+  'K': 75,
+  'L': 76,
+  'M': 77,
+  'N': 78,
+  'O': 79,
+  'P': 80,
+  'Q': 81,
+  'R': 82,
+  'S': 83,
+  'T': 84,
+  'U': 85,
+  'V': 86,
+  'W': 87,
+  'X': 88,
+  'Y': 89,
+  'Z': 90,
+  'ENTER': 13,
+  'SHIFT': 16,
+  'ESC': 27,
+  'SPACE': 32,
+  'LEFT': 37,
+  'UP': 38,
+  'RIGHT': 39,
+  'DOWN': 40,
+  'BACKSPACE': 8,
+  'DELETE': 46,
+  'TAB': 9,
+  'TILDE': 192
+};
+
+
+/**
+ * The transposed version of KEY_MAP.
+ *
+ * @type {Object.<string>}
+ */
+var TRANSPOSED_KEY_MAP = util.getTranspose(KEY_MAP);
+
+/*!
+ * @type Array.<string>
+ */
+var keysDown = [];
+
+var Key = (function () {
+
+  'use strict';
+
+  /**
+   * Represents a key on the keyboard.  You'll never actually call this method
+   * directly; Key Objects for every key that Keydrown supports are created for
+   * you when the library is initialized (as in, when the file is loaded).  You
+   * will, however, use the `prototype` methods below to bind functions to key
+   * states.
+   *
+   * @param {number} keyCode The keyCode of the key.
+   * @constructor
+   * @class kd.Key
+   */
+  function Key (keyCode) {
+    this.keyCode = keyCode;
+    this.cachedKeypressEvent = null;
+  }
+
+
+  /*!
+   * The function to be invoked on every tick that the key is held down for.
+   *
+   * @type {function}
+   */
+  Key.prototype._downHandler = util.noop;
+
+
+  /*!
+   * The function to be invoked when the key is released.
+   *
+   * @type {function}
+   */
+  Key.prototype._upHandler = util.noop;
+
+
+  /*!
+   * The function to be invoked when the key is pressed.
+   *
+   * @type {function}
+   */
+  Key.prototype._pressHandler = util.noop;
+
+
+  /*!
+   * Private helper function that binds or invokes a hander for `down`, `up',
+   * or `press` for a `Key`.
+   *
+   * @param {Key} key
+   * @param {string} handlerName
+   * @param {function=} opt_handler If omitted, the handler is invoked.
+   * @param {KeyboardEvent=} opt_evt If this function is being called by a
+   * keyboard event handler, this is the raw KeyboardEvent Object provided from
+   * the browser.
+   */
+  function bindOrFire (key, handlerName, opt_handler, opt_evt) {
+    if (opt_handler) {
+      key[handlerName] = opt_handler;
+    } else {
+      key[handlerName](opt_evt);
+    }
+  }
+
+
+  /**
+   * Returns whether the key is currently pressed or not.
+   *
+   * @method isDown
+   * @return {boolean} True if the key is down, otherwise false.
+   */
+  Key.prototype.isDown = function () {
+    return util.indexOf(keysDown, this.keyCode) !== -1;
+  };
+
+
+  /**
+   * Bind a function to be called when the key is held down.
+   *
+   * @method down
+   * @param {function=} opt_handler The function to be called when the key is
+   * held down.  If omitted, this function invokes whatever handler was
+   * previously bound.
+   */
+  Key.prototype.down = function (opt_handler) {
+    bindOrFire(this, '_downHandler', opt_handler, this.cachedKeypressEvent);
+  };
+
+
+  /**
+   * Bind a function to be called when the key is released.
+   *
+   * @method up
+   * @param {function=} opt_handler The function to be called when the key is
+   * released.  If omitted, this function invokes whatever handler was
+   * previously bound.
+   * @param {KeyboardEvent=} opt_evt If this function is being called by the
+   * keyup event handler, this is the raw KeyboardEvent Object provided from
+   * the browser.  This should generally not be provided by client code.
+   */
+  Key.prototype.up = function (opt_handler, opt_evt) {
+    bindOrFire(this, '_upHandler', opt_handler, opt_evt);
+  };
+
+
+  /**
+   * Bind a function to be called when the key is pressed.  This handler will
+   * not fire again until the key is released — it does not repeat.
+   *
+   * @method press
+   * @param {function=} opt_handler The function to be called once when the key
+   * is pressed.  If omitted, this function invokes whatever handler was
+   * previously bound.
+   * @param {KeyboardEvent=} opt_evt If this function is being called by the
+   * keydown event handler, this is the raw KeyboardEvent Object provided from
+   * the browser.  This should generally not be provided by client code.
+   */
+  Key.prototype.press = function (opt_handler, opt_evt) {
+    this.cachedKeypressEvent = opt_evt;
+    bindOrFire(this, '_pressHandler', opt_handler, opt_evt);
+  };
+
+
+  /**
+   * Remove the handler that was bound with `{{#crossLink
+   * "kd.Key/down:method"}}{{/crossLink}}`.
+   * @method unbindDown
+   */
+  Key.prototype.unbindDown = function () {
+    this._downHandler = util.noop;
+  };
+
+
+  /**
+   * Remove the handler that was bound with `{{#crossLink
+   * "kd.Key/up:method"}}{{/crossLink}}`.
+   * @method unbindUp
+   */
+  Key.prototype.unbindUp = function () {
+    this._upHandler = util.noop;
+  };
+
+
+  /**
+   * Remove the handler that was bound with `{{#crossLink
+   * "kd.Key/press:method"}}{{/crossLink}}`.
+   * @method unbindPress
+   */
+  Key.prototype.unbindPress = function () {
+    this._pressHandler = util.noop;
+  };
+
+  return Key;
+
+}());
+
+var kd = (function (keysDown) {
+
+  'use strict';
+
+  /**
+   * @class kd
+   */
+  var kd = {};
+  kd.Key = Key;
+
+  var isRunning = false;
+
+  var now = Date.now
+     ? Date.now
+     : function () {return +new Date();};
+
+  var previousUpdateTime = now();
+
+  /**
+   * Evaluate which keys are held down and invoke their handler functions.
+   * @method tick
+   */
+  kd.tick = function () {
+    var i, len = keysDown.length;
+    for (i = 0; i < len; i++) {
+      var keyCode = keysDown[i];
+
+      var keyName = TRANSPOSED_KEY_MAP[keyCode];
+      if (keyName) {
+        kd[keyName].down();
+      }
+    }
+  };
+
+
+  /**
+   * A basic run loop.  `handler` gets called approximately 60 times a second.
+   *
+   * @param {Function(number, number)} handler The callback function to call on
+   * every tick.  You likely want to call [kd.tick](#method_tick) in this
+   * function.  This callback receives the time elapsed since the previous
+   * execution of the callback as the first parameter, and the current time
+   * stamp as the second.
+   * @method run
+   */
+  kd.run = function (handler) {
+    isRunning = true;
+    var currentTime = now();
+    var timeSinceLastUpdate = currentTime - previousUpdateTime;
+
+    util.requestAnimationFrame.call(window, function () {
+      if (!isRunning) {
+        return;
+      }
+
+      kd.run(handler);
+      handler(timeSinceLastUpdate, currentTime);
+    });
+
+    previousUpdateTime = currentTime;
+  };
+
+
+  /**
+   * Cancels the loop created by [run](#method_run).
+   * @method stop
+   */
+  kd.stop = function () {
+    isRunning = false;
+  };
+
+
+  // SETUP
+  //
+
+
+  // Initialize the KEY Objects
+  util.forEach(KEY_MAP, function (keyCode, keyName) {
+    kd[keyName] = new Key(keyCode);
+  });
+
+  util.documentOn('keydown', function (evt) {
+    var keyCode = evt.keyCode;
+    var keyName = TRANSPOSED_KEY_MAP[keyCode];
+    var isNew = util.pushUnique(keysDown, keyCode);
+    var key = kd[keyName];
+
+    if (key) {
+      var cachedKeypressEvent = key.cachedKeypressEvent || {};
+
+      // If a modifier key was held down the last time that this button was
+      // pressed, and it is pressed again without the modifier key being
+      // released, it is considered a newly-pressed key.  This is to work
+      // around the fact that the "keyup" event does not fire for the modified
+      // key until the modifier button is also released, which poses a problem
+      // for repeated, modified key presses such as hitting ctrl/meta+Z for
+      // rapid "undo" actions.
+      if (cachedKeypressEvent.ctrlKey ||
+          cachedKeypressEvent.shiftKey ||
+          cachedKeypressEvent.metaKey) {
+        isNew = true;
+      }
+
+      if (isNew) {
+        key.press(null, evt);
+      }
+    }
+  });
+
+  util.documentOn('keyup', function (evt) {
+    var keyCode = util.removeValue(keysDown, evt.keyCode);
+
+    var keyName = TRANSPOSED_KEY_MAP[keyCode];
+    if (keyName) {
+      kd[keyName].up(null, evt);
+    }
+  });
+
+  // Stop firing the "down" handlers if the user loses focus of the browser
+  // window.
+  util.documentOn('blur', function (evt) {
+    // Fire the "up" handler for each key that is currently held down
+    util.forEach(keysDown, function (keyCode) {
+      var mappedKey = TRANSPOSED_KEY_MAP[keyCode];
+      if (mappedKey) {
+        kd[mappedKey].up();
+      }
+    });
+
+    keysDown.length = 0;
+  });
+
+
+  return kd;
+
+ // The variables passed into the closure here are defined in kd.key.js.
+}(keysDown));
+
+if (typeof module === "object" && typeof module.exports === "object") {
+  // Keydrown was loaded as a CommonJS module (by Browserify, for example).
+  module.exports = kd;
+} else if (typeof define === "function" && define.amd) {
+  // Keydrown was loaded as an AMD module.
+  define(function () {
+    return kd;
+  });
+} else {
+  window.kd = kd;
+}
+
+} (window));
 </script>
 
 <script type="text/javascript">
