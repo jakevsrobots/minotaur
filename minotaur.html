@@ -25,12 +25,7 @@ bugs:
 map named "start"
 #######
 #*1M *#
-##### #
-    # #
-    # #
-##### #####
-#*   *  M #
-###########
+#######
 end
 
 key
@@ -77,7 +72,7 @@ about "minotaur"
                "sorry am i in your way"
                "excuse me"
                switch "minotaur wall" to "off"
-    with topic "pass" when switch "minotaur mood" is "chill"
+    with topic "pass" when switch "minotaur mood" is "irritable"
                "sorry am i in your way"
                "you could have said something"
                switch "minotaur wall" to "off"
@@ -264,7 +259,7 @@ let log = console.log;
 // --------------------------------------------------------------
 // #constants
 // --------------------------------------------------------------
-pm.featureOption = {
+pm.option = {
   COLOR: Symbol("color"),
   DISTANCE: Symbol("distance"),
   SWITCH: Symbol("switch"),
@@ -276,15 +271,6 @@ pm.featureOption = {
   SCALE: Symbol("scale"),
   SECONDARY_COLOR: Symbol("secondary color"),
   TOPIC: Symbol("topic")
-};
-
-pm.feature = {
-  BALL: Symbol("ball"),
-  MESH: Symbol("mesh"),
-  CHAT: Symbol("chat"),
-  ITEM: Symbol("item"),
-  LIGHT: Symbol("light"),
-  WALL: Symbol("wall")
 };
 
 pm.key = {
@@ -313,8 +299,7 @@ pm.command = {
   GAIN_ITEM: Symbol("gain item"),
   LOSE_ITEM: Symbol("lose item"),
   SAY: Symbol("say"),
-  SWITCH_ON: Symbol("switch on"),
-  SWITCH_OFF: Symbol("switch off")
+  SWITCH: Symbol("switch")
 };
 
 pm.meshes = {
@@ -463,8 +448,6 @@ pm.Map = function(maze) {
   this.root = new THREE.Object3D();
 };
 
-// todo make a Tile class for runtime which knows its own metadata/features, instead of
-// always passing the char and looking things up repeatedly
 pm.Map.prototype.hasFeature = function(tile, feature) {
   if (tile == " ")
     return false;
@@ -481,7 +464,14 @@ pm.Map.prototype.hasFeatureAtPoint = function(feature, x, y) {
 };
 
 pm.Map.prototype.checkForWall = function(x, y) {
-  return this.hasFeatureAtPoint(pm.feature.WALL, x, y);
+  let tileAtPoint = this.getTile(x,y);
+
+  if (tileAtPoint === undefined)
+    return false;
+
+  let f = tileAtPoint.featureList.find(x => x instanceof pm.WallFeature);
+
+  return f !== undefined && f.enabled;
 };
 
 pm.Map.prototype.build = function() {
@@ -512,6 +502,204 @@ pm.Map.prototype.getTile = function(x, y) {
 };
 
 // --------------------------------------------------------------
+// #features -- objects representing features of a tile
+// --------------------------------------------------------------
+
+// Mesh
+pm.MeshFeature = function(geo, sw, options) {
+  this.geometry = geo;
+  this.switch = sw;
+  this.options = options;
+};
+
+pm.MeshFeature.prototype.build = function(tile) {
+  this.tile = tile;
+  let bg;
+  switch (this.geometry) {
+    case pm.meshes.BOX:
+      bg = new THREE.BoxBufferGeometry();
+      break;
+    case pm.meshes.BALL:
+      bg = new THREE.SphereBufferGeometry();
+      break;
+  };
+
+  let matOptions = {};
+
+  // color
+  let hexColor = pm.getOption(this, pm.option.COLOR);
+  if (hexColor !== undefined)
+    matOptions.color = hexColor.color;
+
+  // texture
+  let patternOption = pm.getOption(this, pm.option.PATTERN);
+  let texture;
+  if (patternOption !== undefined) {
+    let pattern;
+    if (patternOption.name == "__noise") 
+      pattern = pm.noisePattern(64,64);
+    else
+      pattern = tile.map.maze.patterns.find(x => x.name == patternOption.name);
+
+    texture = pm.createTexture(pattern.pixels);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(patternOption.tiling[0], patternOption.tiling[1]);
+    texture.rotation = 0.65;
+    matOptions.map = texture;
+  }
+
+  this.mat = new THREE.MeshLambertMaterial(matOptions);
+  this.mesh = new THREE.Mesh(bg, this.mat);
+
+  // scale
+  let scaleOption = pm.getOption(this, pm.option.SCALE);
+  let scale = pm.getOption(this, pm.option.SCALE);
+  if (scale !== undefined)
+    this.mesh.scale.set(scale.scale, scale.scale, scale.scale);
+
+  tile.root.add(this.mesh);
+};
+
+pm.MeshFeature.prototype.destroy = function() {
+};
+
+pm.MeshFeature.prototype.switchOn = function() {
+  this.mesh.visible = true;
+};
+
+pm.MeshFeature.prototype.switchOff = function() {
+  this.mesh.visible = false;
+};
+
+pm.MeshFeature.prototype.updateSwitchedOptions = function() {
+};
+
+// Chat
+pm.ChatFeature = function(sw, options) {
+  this.switch = sw;
+  this.options = options;
+};
+
+pm.ChatFeature.prototype.build = function(tile) {
+};
+
+pm.ChatFeature.prototype.destroy = function() {
+};
+
+pm.ChatFeature.prototype.switchOn = function() {
+};
+
+pm.ChatFeature.prototype.switchOff = function() {
+};
+
+pm.ChatFeature.prototype.updateSwitchedOptions = function() {
+};
+
+// Item
+pm.ItemFeature = function(undroppable, sw) {
+  this.undroppable = undroppable;
+  this.switch = sw;
+};
+
+pm.ItemFeature.prototype.build = function(tile) {
+};
+
+pm.ItemFeature.prototype.destroy = function() {
+};
+
+pm.ItemFeature.prototype.switchOn = function() {
+};
+
+pm.ItemFeature.prototype.switchOff = function() {
+};
+
+pm.ItemFeature.prototype.updateSwitchedOptions = function() {
+};
+
+// Light
+pm.LightFeature = function(lightType, sw, options) {
+  this.lightType = lightType;
+  this.switch = sw;
+  this.options = options;
+};
+
+pm.LightFeature.prototype.build = function(tile) {
+  let light;
+  let colorOption = pm.getOption(this, pm.option.COLOR);
+  let secondaryColorOption = pm.getOption(this, pm.option.SECONDARY_COLOR);
+  let color, secondaryColor;
+
+  if (colorOption != undefined)
+    color = colorOption.color;
+  else
+    color = 0xffffff;
+
+  if (secondaryColorOption != undefined)
+    secondaryColor = secondaryColorOption.secondaryColor;
+  else
+    secondaryColor = 0xffffff;
+
+  switch (this.lightType) {
+    case "point":
+      light = new THREE.PointLight(color);
+      break;
+    case "directional":
+      light = new THREE.DirectionalLight(color);
+      break;
+    case "hemisphere":
+      light = new THREE.HemisphereLight(color, secondaryColor);
+      break;
+  }
+
+  let intensityOption = pm.getOption(this, pm.option.INTENSITY);
+  if (intensityOption !== undefined)
+    light.intensity = intensityOption.intensity;
+
+  let distanceOption = pm.getOption(this, pm.option.DISTANCE);
+  if (distanceOption !== undefined)
+    light.distance = distanceOption.distance;
+
+  tile.root.add(light);
+};
+
+pm.LightFeature.prototype.destroy = function() {
+};
+
+pm.LightFeature.prototype.switchOn = function() {
+};
+
+pm.LightFeature.prototype.switchOff = function() {
+};
+
+pm.LightFeature.prototype.updateSwitchedOptions = function() {
+};
+
+// Wall
+pm.WallFeature = function(sw) {
+  this.type = "wall";
+  this.switch = sw;
+  this.enabled = true;
+};
+
+pm.WallFeature.prototype.build = function(tile) {
+};
+
+pm.WallFeature.prototype.destroy = function() {
+};
+
+pm.WallFeature.prototype.switchOn = function() {
+  this.enabled = true;
+};
+
+pm.WallFeature.prototype.switchOff = function() {
+  this.enabled = false;
+};
+
+pm.WallFeature.prototype.updateSwitchedOptions = function() {
+};
+
+// --------------------------------------------------------------
 // #tile -- obj representing a tile at runtime
 // --------------------------------------------------------------
 pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
@@ -525,109 +713,24 @@ pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
   this.name = tileName;
 };
 
-pm.Tile.prototype.hasFeature = function(featureSymbol) {
-  return this.featureList.some(x => x.type === featureSymbol);
+pm.Tile.prototype.hasFeature = function(FeatureType) {
+  return this.featureList.some(x => x instanceof FeatureType)
 };
 
-pm.Tile.prototype.getFeature = function(featureSymbol) {
-  return this.featureList.find(x => x.type === featureSymbol);
+pm.Tile.prototype.getFeature = function(FeatureType) {
+  return this.featureList.find(x => x instanceof FeatureType === FeatureType);
 };
 
 pm.Tile.prototype.build = function() {
   this.map.root.add(this.root);
   this.root.position.set(this.x, 0, this.y);
 
-  // TODO -- iterate through features and add all of them instead of just
-  // checking for one. you should be able to have more than one mesh, etc.
-
-  if (this.hasFeature(pm.feature.MESH)) {
-    let f = this.getFeature(pm.feature.MESH);
-    
-    let bg;
-    switch (f.geometry) {
-      case pm.meshes.BOX:
-        bg = new THREE.BoxBufferGeometry();
-        break;
-      case pm.meshes.BALL:
-        bg = new THREE.SphereBufferGeometry();
-        break;
-    };
-
-    let matOptions = {};
-
-    // color
-    let hexColor = pm.getOption(f, pm.featureOption.COLOR);
-    if (hexColor !== undefined)
-      matOptions.color = hexColor.color;
-
-    // texture
-    let patternOption = pm.getOption(f, pm.featureOption.PATTERN);
-    let texture;
-    if (patternOption !== undefined) {
-      let pattern;
-      if (patternOption.name == "__noise") 
-        pattern = pm.noisePattern(64,64);
-      else
-        pattern = this.map.maze.patterns.find(x => x.name == patternOption.name);
-
-      texture = pm.createTexture(pattern.pixels);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(patternOption.tiling[0], patternOption.tiling[1]);
-      texture.rotation = 0.65;
-      matOptions.map = texture;
+  for (let f of this.featureList) {
+    f.build(this);
+    if (f.switch != null) {
+      if (!this.map.maze.checkSwitch(f.switch))
+        f.switchOff();
     }
-
-    let mat = new THREE.MeshLambertMaterial(matOptions);
-    let mesh = new THREE.Mesh(bg, mat);
-
-    // scale
-    let scaleOption = pm.getOption(f, pm.featureOption.SCALE);
-    let scale = pm.getOption(f, pm.featureOption.SCALE);
-    if (scale !== undefined)
-      mesh.scale.set(scale.scale, scale.scale, scale.scale);
-
-    this.root.add(mesh);
-  } 
-
-  if (this.hasFeature(pm.feature.LIGHT)) {
-    let f = this.getFeature(pm.feature.LIGHT);
-    let light;
-    let colorOption = pm.getOption(f, pm.featureOption.COLOR);
-    let secondaryColorOption = pm.getOption(f, pm.featureOption.SECONDARY_COLOR);
-    let color, secondaryColor;
-
-    if (colorOption != undefined)
-      color = colorOption.color;
-    else
-      color = 0xffffff;
-
-    if (secondaryColorOption != undefined)
-      secondaryColor = secondaryColorOption.secondaryColor;
-    else
-      secondaryColor = 0xffffff;
-
-    switch (f.lightType) {
-      case "point":
-        light = new THREE.PointLight(color);
-        break;
-      case "directional":
-        light = new THREE.DirectionalLight(color);
-        break;
-      case "hemisphere":
-        light = new THREE.HemisphereLight(color, secondaryColor);
-        break;
-    }
-
-    let intensityOption = pm.getOption(f, pm.featureOption.INTENSITY);
-    if (intensityOption !== undefined)
-      light.intensity = intensityOption.intensity;
-
-    let distanceOption = pm.getOption(f, pm.featureOption.DISTANCE);
-    if (distanceOption !== undefined)
-      light.distance = distanceOption.distance;
-
-    this.root.add(light);
   }
 }
 
@@ -688,6 +791,9 @@ pm.Maze.prototype.build = function() {
             break;
           case "startingTopicsBlock":
             this.player.topics = block.topics;
+            break;
+          case "switchesBlock":
+            this.switches = block.switches;
             break;
           case "useItemBlock":
             this.itemHandlers.push(block);
@@ -826,9 +932,9 @@ pm.Maze.prototype.updateMaze = function() {
   let ui = this.ui;
   if (tile !== undefined) {
     let chatOptions = tile.featureList
-      .filter(f => f.type === pm.feature.CHAT)
+      .filter(f => f instanceof pm.ChatFeature)
       .map(function(cf) {
-        let promptOption = pm.getOption(cf, pm.featureOption.PROMPT);
+        let promptOption = pm.getOption(cf, pm.option.PROMPT);
         let text = tile.name;
 
         if (promptOption !== undefined)
@@ -870,28 +976,43 @@ pm.Maze.prototype.runCommand = function(c) {
       break;
     case pm.command.LOSE_ITEM:
       break;
-    case pm.command.SWITCH_TO:
-      log("switch to", c.value);
+    case pm.command.SWITCH:
       sw = this.switches.find(g => g.name == c.name);
 
-      if (sw.valid.indexOf(c.value ==-1))
-        throw `"{c.value}" is not a valid option for switch "{c.name}"`;
+      if (sw.states.indexOf(c.value) == -1)
+        throw `"${c.value}" is not a valid state for switch "${c.name}"`;
 
-      sw.value = c.name;
+      sw.value = c.value;
 
-      this.switchUpdate();
+      this.switchUpdate(sw);
 
       break;
   }
 }
 
-pm.Maze.prototype.checkSwitch = function(name) {
-  let sw = this.switches.find(s => s.name == c.name);
-  return sw.value;
+pm.Maze.prototype.checkSwitch = function(switchToCheck) {
+  let switchActual = this.switches.find(s => s.name == switchToCheck.name);
+  return switchActual.value == switchToCheck.value;
 };
 
-pm.Maze.prototype.switchUpdate = function() {
-  // TODO -- apply any changes that should be made based on this new switch value
+pm.Maze.prototype.switchUpdate = function(sw) {
+  for (let tile of this.currentMap.live) {
+    for (let feature of tile.featureList) {
+      if (feature.switch != null && 
+          feature.switch.name == sw.name) {
+        if (this.checkSwitch(feature.switch))
+          feature.switchOn();
+        else
+          feature.switchOff();
+      }
+
+      // options need to be treated as a group, so check if there are any
+      // relevant ones and then update all of them together.
+      if (feature.options && 
+        feature.options.some(x => x.switch != null && x.switch.name == sw.name))
+        feature.updateSwitchedOptions();
+    }
+  }
 }
 
 // --------------------------------------------------------------
@@ -1114,13 +1235,18 @@ pm.UI.prototype.showMessage = function(msg) {
 };
 
 pm.UI.prototype.showTopics = function(cf) {
-  let topics = cf.options.filter(o => o.type == pm.featureOption.TOPIC);
+  let topics = cf.options.filter(o => o.type == pm.option.TOPIC);
   let ui = this;
   let options = topics.map(function(topic) {
     let text, onclick;
 
     if (this.maze.player.topics.indexOf(topic.name) == -1)
       return null;
+
+    if (topic.switch != null &&
+        !this.maze.checkSwitch(topic.switch)) {
+      return null;
+    }
 
     text = topic.name;
     onclick = () => ui.sequence(topic.text, () => ui.chat(cf));
@@ -1155,7 +1281,7 @@ pm.UI.prototype.clear = function() {
 pm.UI.prototype.chat = function(cf) {
   this.maze.state = pm.state.CHATTING;
   this.clear();
-  let greeting = cf.options.find(o => o.type == pm.featureOption.GREETING);
+  let greeting = cf.options.find(o => o.type == pm.option.GREETING);
   if (greeting !== undefined)
     this.showMessage(greeting.text);
 
@@ -1384,47 +1510,49 @@ pm.parser = function() {
         return key;
     }),
 
-    colorOption: (r) => P.seq(
+    // options
+    // test: testParseColorOption
+    colorOption: (r) => P.seqObj(
       pm.wordList(r, "with color"),
-      r.__)
-      .then(r.hexColor)
-      .map(x => ({type: pm.featureOption.COLOR, 
-                  color: x})),
+      r.__,
+      ["color", r.hexColor],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.COLOR})), 
 
-    secondaryColorOption: (r) => P.seq(
+    secondaryColorOption: (r) => P.seqObj(
       pm.wordList(r, "with secondary color"),
-      r.__)
-      .then(r.hexColor)
-      .map(x => ({type: pm.featureOption.SECONDARY_COLOR, 
-                  secondaryColor: x})),
+      r.__,
+      ["secondaryColor", r.hexColor],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.SECONDARY_COLOR})),
 
-    scaleOption: (r) => P.seq(
+    scaleOption: (r) => P.seqObj(
       pm.wordList(r, "with scale"),
-      r.__)
-      .then(r.fraction)
-      .map(x => ({type: pm.featureOption.SCALE, 
-                  scale: x})),
+      r.__,
+      ["scale", r.fraction],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.SCALE})), 
 
-    nudgeOption: (r) => P.seq(
+    nudgeOption: (r) => P.seqObj(
       pm.wordList(r, "with nudge"),
-      r.__)
-      .then(r.vector.sepBy1(r.__))
-      .map(n => ({type: pm.featureOption.NUDGE, 
-                  vector: n})),
+      r.__,
+      ["vector", r.vector],
+      ["switch", r.optWhenSwitch]
+    ).map(n => Object.assign(x, {type: pm.option.NUDGE})),
 
-    intensityOption: (r) => P.seq(
+    intensityOption: (r) => P.seqObj(
       pm.wordList(r, "with intensity"),
-      r.__)
-    .then(r.fraction)
-    .map(x => ({type: pm.featureOption.INTENSITY, 
-                intensity: x})),
+      r.__,
+      ["intensity", r.fraction],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.INTENSITY})),
 
-    distanceOption: (r) => P.seq(
+    distanceOption: (r) => P.seqObj(
       pm.wordList(r, "with distance"),
-      r.__)
-    .then(r.fraction)
-    .map(x => ({type: pm.featureOption.DISTANCE, 
-                distance: x})),
+      r.__,
+      ["distance", r.fraction],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.DISTANCE})),
 
     patternOption: (r) => P.seqObj(
       pm.wordList(r, "with pattern"),
@@ -1433,24 +1561,16 @@ pm.parser = function() {
         r.quotedString, 
         pm.word("noise").result("__noise")
       )],
-      ["tiling", r.__.then(r.tiling).fallback([1,1])]
-    ).map(x => Object.assign(x, {type: pm.featureOption.PATTERN})),
-
-    switchOption: (r) => P.seqObj(
-      pm.wordList(r, "when switch"),
-      r.__,
-      ["name", r.quotedString],
-      r.__
-      pm.word("is"),
-      r.__
-      ["value", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.featureOption.SWITCH})),
+      ["tiling", r.__.then(r.tiling).fallback([1,1])],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.PATTERN})),
 
     promptOption: (r) => P.seqObj(
       pm.wordList(r, "with prompt"),
       r.__,
-      ["text", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.featureOption.PROMPT})),
+      ["text", r.quotedString],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.PROMPT})),
 
     topicPage: (r) => P.alt(
       r.quotedString,
@@ -1461,15 +1581,17 @@ pm.parser = function() {
       pm.wordList(r, "with topic"),
       r.__,
       ["name", r.quotedString],
+      ["switch", r.optWhenSwitch],
       r.__,
       ["text", r.topicPage.sepBy1(r.__)]
-    ).map(x => Object.assign(x, {type: pm.featureOption.TOPIC})),
+    ).map(x => Object.assign(x, {type: pm.option.TOPIC})),
 
     greetingOption: (r) => P.seqObj(
       pm.wordList(r, "with greeting"),
       r.__,
-      ["text", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.featureOption.GREETING})),
+      ["text", r.quotedString],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.GREETING})),
 
     meshOption: (r) => P.alt(
       r.colorOption,
@@ -1482,17 +1604,30 @@ pm.parser = function() {
       pm.word("ball").result(pm.meshes.BALL)
     ),
 
-    meshFeature: (r) => P.seqObj(
-      ["geometry", r.geometryName],
-      ["options", optionParser(r, r.meshOption, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.MESH})),
-
     lightOption: (r) => P.alt(
       r.colorOption,
       r.secondaryColorOption,
       r.intensityOption,
       r.distanceOption
     ),
+
+    chatOption: (r) => P.alt(
+      r.promptOption, 
+      r.topicOption, 
+      r.greetingOption),
+
+    // features
+    chatFeature: (r) => P.seqObj(
+      pm.word("chat"),
+      ["switch", r.optWhenSwitch],
+      ["options", optionParser(r, r.chatOption)]
+    ).map(x => new pm.ChatFeature(x.switch, x.options)),
+
+    itemFeature: (r) => P.seqObj(
+      ["undroppable", P.seq(pm.word("undroppable"), r.__).fallback(false)],
+      pm.word("item"),
+      ["switch", r.optWhenSwitch]
+    ).map(x => new pm.ItemFeature(x.undroppable, x.switch)),
 
     lightFeature: (r) => P.seqObj(
       ["lightType", P.alt(
@@ -1501,40 +1636,23 @@ pm.parser = function() {
         pm.word("hemisphere"))],
       r.__,
       pm.word("light"),
-      ["options", optionParser(r, r.lightOption, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.LIGHT})),
+      ["switch", r.optWhenSwitch],
+      ["options", optionParser(r, r.lightOption)]
+    ).map(x => new pm.LightFeature(x.lightType, x.switch, x.options)),
 
-    actionFeature: (r) => P.seqObj(
-      pm.word("can"),
-      r.__,
-      ["name", r.quotedString],
-      ["options", optionParser(r, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.ACTION})),
+    meshFeature: (r) => P.seqObj(
+      ["geometry", r.geometryName],
+      ["switch", r.optWhenSwitch],
+      ["options", optionParser(r, r.meshOption)]
+    ).map(x => new pm.MeshFeature(x.geometry, x.switch, x.options)),
 
     wallFeature: (r) => P.seqObj(
       pm.word("wall"),
-      ["options", optionParser(r, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.WALL})),
-
-    itemFeature: (r) => P.seqObj(
-      ["undroppable", P.seq(pm.word("undroppable"), r.__).fallback(false)],
-      pm.word("item"),
-      ["options", optionParser(r, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.ITEM})),
-
-    chatOption: (r) => P.alt(
-      r.promptOption, 
-      r.topicOption, 
-      r.greetingOption),
-
-    chatFeature: (r) => P.seqObj(
-      pm.word("chat"),
-      ["options", optionParser(r, r.chatOption, r.switchOption)]
-    ).map(x => Object.assign(x, {type: pm.feature.CHAT})),
+      ["switch", r.optWhenSwitch],
+    ).map(x => new pm.WallFeature(x.switch)),
 
     feature: (r) => r.article
       .then(P.alt(
-        r.actionFeature,
         r.meshFeature,
         r.chatFeature,
         r.itemFeature,
@@ -1545,6 +1663,19 @@ pm.parser = function() {
     // test: testParseFeatureList
     featureList: (r) => 
       r.feature.sepBy1(r.and),
+
+    optWhenSwitch: (r) => r.__.then(r.whenSwitch).fallback(null),
+
+    // test: testParseWhenSwitch
+    whenSwitch: (r) => P.seqObj(
+      pm.wordList(r, "when switch"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      pm.word("is"),
+      r.__,
+      ["value", r.quotedString]
+    ),
 
     keyBlock: (r) => P.seqObj(
       ["name", r.startKey],
@@ -1642,17 +1773,15 @@ pm.parser = function() {
       ["itemName", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.GAIN_ITEM})),
 
-    commandSwitchOff: (r) => P.seqObj(
-      pm.wordList(r, "switch off"),
+    commandSwitch: (r) => P.seqObj(
+      pm.wordList(r, "switch"),
       r.__,
-      ["name", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.SWITCH_OFF})),
-
-    commandSwitchOn: (r) => P.seqObj(
-      pm.wordList(r, "switch on"),
+      ["name", r.quotedString],
       r.__,
-      ["name", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.SWITCH_ON})),
+      pm.word("to"),
+      r.__,
+      ["value", r.quotedString]
+    ).map(x => Object.assign(x, {type: pm.command.SWITCH})),
 
     commandLoseItem: (r) => P.seqObj(
       pm.word("lose"),
@@ -1673,8 +1802,7 @@ pm.parser = function() {
       r.commandLoseTopic,
       r.commandGainItem,
       r.commandLoseItem,
-      r.commandSwitchOn,
-      r.commandSwitchOff,
+      r.commandSwitch,
       r.commandSay
     ),
 
@@ -1689,6 +1817,24 @@ pm.parser = function() {
                  target: x.name.target}))
     .node("useItemBlock"),
 
+    or: (r) => pm.word("or").trim(r.__),
+    switchStateList: (r) => r.quotedString.sepBy(r.or),
+    switchDefinition: (r) => P.seqObj(
+      ["name", r.quotedString],
+      r.__,
+      pm.wordList(r, "can be"),
+      r.__,
+      ["states", r.switchStateList]
+    ).map(x => Object.assign(x, {value: x.states[0]})),
+
+    switchesBlock: (r) => P.seqObj(
+      pm.word("switches"),
+      r.__,
+      ["switches", r.switchDefinition.sepBy(r.__)],
+      r.__,
+      r.endBlock
+    ).node("switchesBlock"),
+
     // test: testParseMaze
     maze: (r) => P.alt(
       r.aboutBlock,
@@ -1697,6 +1843,7 @@ pm.parser = function() {
       r.patternBlock,
       r.startingItemsBlock,
       r.startingTopicsBlock,
+      r.switchesBlock,
       r.useItemBlock
     ).sepBy1(r.__).trim(r._).skip(P.end)
   });
@@ -1785,7 +1932,7 @@ pm.parser = function() {
         let p = pm.parser().inKeyFeatureList;
         let v = p.tryParse(code);
         eq(v.length, 2);
-        eq(v[0].type, pm.feature.WALL);
+        assert(v[0] instanceof pm.WallFeature);
       },
 
       "testParseFeatureList": function() {
@@ -1793,7 +1940,24 @@ pm.parser = function() {
         let p = pm.parser().featureList;
         let v = p.tryParse(code);
         eq(v.length, 2);
-        eq(v[0].type, pm.feature.WALL);
+        assert(v[0] instanceof pm.WallFeature);
+      },
+
+      "testParseColorOption": function() {
+        let code = `with color #ffffff when switch "a" is "on"`;
+        let p = pm.parser().colorOption;
+        let v = p.tryParse(code);
+        eq(v.color, 0xffffff);
+        eq(v.switch.name, "a");
+        eq(v.switch.value, "on");
+      },
+
+      "testParseWhenSwitch": function() {
+        let code = `when switch "a" is "on"`;
+        let p = pm.parser().whenSwitch;
+        let v = p.tryParse(code);
+        eq(v.name, "a");
+        eq(v.value, "on");
       },
 
       "testParseKey": function() {
