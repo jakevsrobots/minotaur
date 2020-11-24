@@ -4,8 +4,10 @@ pet minotaur, version 0.
 
 edit the script below.
 
+commands todo:
+- draw command
+
 bugs:
-- map width doesn't extend beyond the width of the first line
 - nested comments don't work, and also if you try to
   comment out a string with a close paren it will break.
 -->
@@ -22,7 +24,7 @@ bugs:
 
 map named "start"
 #######
-#*1 * #
+#*1M *#
 ##### #
     # #
     # #
@@ -36,45 +38,66 @@ key
   # is for "wall" with
       a wall 
       and a box 
-        with color #8e5b9e
+        with color #ffffff
         with pattern noise
   M is for "minotaur"
   * is for "lamp" with 
       a point light 
         with distance 5
-        with color #cbbdad
+        with color #FF0000
         with intensity 2
 end
 
 about "minotaur"
-  a wall
+  a wall when switch "minotaur wall" is "on"
   and a ball 
-    with scale 2/4
+    with scale 2/4 when switch "minotaur wall" is "on"
+    with scale 1/6 when switch "minotaur wall" is "off"
     with color #2781ba
     with pattern "thick stripes" 2x1
 
-  and a chat 
+  and a chat when switch "minotaur chat" is "on"
     with prompt "talk to the minotaur"
-    with greeting "hi!"
+    with greeting "hi!" when switch "minotaur mood" is "chill"
+    with greeting "it's you" when switch "minotaur mood" is "irritable"
     with topic "the beach"
                "no i haven't been to the beach lately"
                "i basically never leave the maze lol"
-    with topic "fire"
-               "i'm actually kind of scared of fire lol"
-               "it's ok you didn't know"
+    with topic "fur"
+               "sure, take a closer look"
+               gain topic "fleas"
+               "pretty nice right?"
     with topic "fleas"
                "oh you noticed"
                "cool"
+               lose topic "fleas"
+               lose topic "fur"
+               switch "minotaur mood" to "irritable"
+    with topic "pass" when switch "minotaur mood" is "chill"
+               "sorry am i in your way"
+               "excuse me"
+               switch "minotaur wall" to "off"
+    with topic "pass" when switch "minotaur mood" is "chill"
+               "sorry am i in your way"
+               "you could have said something"
+               switch "minotaur wall" to "off"
 end
 
 starting topics
+  "pass"
   "the beach"
-  "fire"
+  "fur"
+end
+
+switches
+  "minotaur wall" can be "on" or "off"
+  "minotaur mood" can be "chill" or "irritable"
+  "minotaur chat" can be "on" or "off"
 end
 
 to use "loupe" with "minotaur"
   say "the minotaur has fleas"
-  add topic "fleas"
+  gain topic "fleas"
 end
 
 pattern named "thin stripes"
@@ -244,6 +267,7 @@ let log = console.log;
 pm.featureOption = {
   COLOR: Symbol("color"),
   DISTANCE: Symbol("distance"),
+  SWITCH: Symbol("switch"),
   GEOMETRY: Symbol("geometry"),
   GREETING: Symbol("greeting"),
   INTENSITY: Symbol("intensity"),
@@ -284,13 +308,13 @@ pm.state = {
 };
 
 pm.command = {
-  ADD_TOPIC: Symbol("add topic"),
-  REMOVE_TOPIC: Symbol("remove topic"),
-  GAIN_ITEM: Symbol("gain"),
-  GOODBYE: Symbol("goodbye"),
-  HELLO: Symbol("hello"),
-  LOSE_ITEM: Symbol("lose"),
-  SAY: Symbol("say")
+  GAIN_TOPIC: Symbol("gain topic"),
+  LOSE_TOPIC: Symbol("lose topic"),
+  GAIN_ITEM: Symbol("gain item"),
+  LOSE_ITEM: Symbol("lose item"),
+  SAY: Symbol("say"),
+  SWITCH_ON: Symbol("switch on"),
+  SWITCH_OFF: Symbol("switch off")
 };
 
 pm.meshes = {
@@ -407,6 +431,28 @@ pm.noisePattern = function(width, height) {
   return pattern;
 };
 
+pm.word = function(s) {
+  return Parsimmon
+    .regexp(new RegExp("\\b" + s + "\\b", "i"))
+    .desc("word '" + s + "'");
+};
+
+// test: testParseWordList
+pm.wordList = function(r, s) {
+  let parsers = [];
+  let words = s.split(" ");
+  for (let i=0; i<words.length; i++) {
+    let w = words[i];
+
+    if (i == 0)
+      parsers.push(pm.word(w));
+    else
+      parsers.push(r.__.then(pm.word(w)));
+  }
+  return Parsimmon.seq(...parsers);
+};
+
+
 // --------------------------------------------------------------
 // #map -- obj representing a map
 // --------------------------------------------------------------
@@ -428,7 +474,7 @@ pm.Map.prototype.hasFeature = function(tile, feature) {
 };
 
 pm.Map.prototype.hasFeatureAtPoint = function(feature, x, y) {
-  let tileAtPoint = this.live.find(t => t.mapX == x && t.mapX == y);
+  let tileAtPoint = this.getTile(x,y);
   if (tileAtPoint === undefined)
     return false;
   return tileAtPoint.hasFeature(feature);
@@ -533,7 +579,6 @@ pm.Tile.prototype.build = function() {
     }
 
     let mat = new THREE.MeshLambertMaterial(matOptions);
-    mat.needsUpdate = true;
     let mesh = new THREE.Mesh(bg, mat);
 
     // scale
@@ -595,12 +640,12 @@ pm.Maze = function() {
   this.patterns = [];
   this.itemHandlers = [];
   this.startingItems = [];
-  this.topics = [];
   this.player = new pm.Player(this);
   this.state = pm.state.READY;
 
   this.key = {};
   this.tiles = [];
+  this.switches = [];
   this.root = new THREE.Object3D();
 };
 
@@ -642,7 +687,7 @@ pm.Maze.prototype.build = function() {
             this.startingItems.push(block);
             break;
           case "startingTopicsBlock":
-            this.topics = this.topics.concat(block.topics);
+            this.player.topics = block.topics;
             break;
           case "useItemBlock":
             this.itemHandlers.push(block);
@@ -690,7 +735,6 @@ pm.Maze.prototype.setupInput = function() {
   kd.RIGHT.press(p.turnRight.bind(p));
 
   let release = function() {
-    log("release", p);
     clearTimeout(p.runTimer);
     p.runTimer = null;
     p.running = false;
@@ -703,7 +747,6 @@ pm.Maze.prototype.setupInput = function() {
 };
 
 pm.Maze.prototype.checkHeldKeys = function() {
-  log("check held keys. running", this.player.running);
   if (this.player.running) {
     if (kd.UP.isDown()) 
       this.player.stepForward(true);
@@ -719,15 +762,11 @@ pm.Maze.prototype.checkHeldKeys = function() {
     }
   } else if(this.anyMovementKeys()) {
     if (this.player.runTimer === null) {
-      console.log("setting up timer");
       this.player.runTimer = setTimeout(function() {
-        log("timer up");
         this.player.running = true;
         this.player.runTimer = null;
         this.checkHeldKeys();
       }.bind(this), pm.KEY_REPEAT_WARMUP);
-    } else {
-      log("already have run timer", this.player.runTimer);
     }
   }
 };
@@ -813,6 +852,48 @@ pm.Maze.prototype.updateMaze = function() {
     this.checkHeldKeys();
 };
 
+
+pm.Maze.prototype.runCommand = function(c) {
+  let sw;
+
+  switch (c.type) {
+    case pm.command.GAIN_TOPIC:
+      if (this.player.topics.indexOf(c.topic) == -1)
+        this.player.topics.push(c.topic);
+      break;
+    case pm.command.LOSE_TOPIC:
+      let i = this.player.topics.indexOf(c.topic);
+      if (i != -1) 
+        this.player.topics.splice(i, 1);
+      break;
+    case pm.command.GAIN_ITEM:
+      break;
+    case pm.command.LOSE_ITEM:
+      break;
+    case pm.command.SWITCH_TO:
+      log("switch to", c.value);
+      sw = this.switches.find(g => g.name == c.name);
+
+      if (sw.valid.indexOf(c.value ==-1))
+        throw `"{c.value}" is not a valid option for switch "{c.name}"`;
+
+      sw.value = c.name;
+
+      this.switchUpdate();
+
+      break;
+  }
+}
+
+pm.Maze.prototype.checkSwitch = function(name) {
+  let sw = this.switches.find(s => s.name == c.name);
+  return sw.value;
+};
+
+pm.Maze.prototype.switchUpdate = function() {
+  // TODO -- apply any changes that should be made based on this new switch value
+}
+
 // --------------------------------------------------------------
 // #player -- player class
 // --------------------------------------------------------------
@@ -823,10 +904,10 @@ pm.Player = function(maze) {
   this.y = 0;
   this.dir = pm.dir.EAST;
   this.root = new THREE.Object3D();
-  //this.root.rotateY(-Math.PI/2);
   this.root.rotation.set(0, -Math.PI/2, 0);
   this.running = false;
   this.runTimer = null;
+  this.topics = [];
 };
 
 pm.Player.prototype.warp = function(x, y) {
@@ -844,7 +925,7 @@ pm.Player.prototype.stepForward = function(smooth) {
   let [x, y] = pm.offsetPoint(this.x, this.y, this.dir);
 
   if (this.map.checkForWall(x, y)) {
-    log("wall"); // todo bump anim
+    // todo bump anim
   } else {
     this.maze.ui.clear();
     this.maze.state = pm.state.MOVING;
@@ -1038,11 +1119,14 @@ pm.UI.prototype.showTopics = function(cf) {
   let options = topics.map(function(topic) {
     let text, onclick;
 
+    if (this.maze.player.topics.indexOf(topic.name) == -1)
+      return null;
+
     text = topic.name;
-    onclick = () => ui.showMessageSequence(topic.text, () => ui.chat(cf));
+    onclick = () => ui.sequence(topic.text, () => ui.chat(cf));
 
     return { text, onclick };
-  });
+  }.bind(this)).filter(x => x !== null);
 
   options.push({text: "bye", onclick: () => ui.endChat()});
 
@@ -1084,14 +1168,24 @@ pm.UI.prototype.endChat = function() {
   this.maze.updateMaze();
 };
 
-pm.UI.prototype.showMessageSequence = function(messages, doneCallback) {
+// a sequence of messages or commands
+pm.UI.prototype.sequence = function(messages, doneCallback) {
   let ui = this;
   this.clear();
   if (messages.length > 0) {
-    this.showMessage(messages[0]);
+    let msg = messages[0];
+
+    if (typeof(msg) !== "string") {
+      this.maze.runCommand(msg);
+      ui.sequence(messages.slice(1), doneCallback);
+      return;
+    } else {
+      this.showMessage(msg);
+    }
+
     setTimeout(function() {
       window.onclick = function() {
-        ui.showMessageSequence(messages.slice(1), doneCallback);
+        ui.sequence(messages.slice(1), doneCallback);
         window.onclick = undefined;
       };
     }, pm.CLICK_COOLDOWN);
@@ -1140,15 +1234,15 @@ pm.parser = function() {
 
     article: (r) => P.seq(
         P.alt(
-          P.string("an"), 
-          P.string("a"), 
-          P.string("the")),
+          pm.word("an"), 
+          pm.word("a"), 
+          pm.word("the")),
         r.__)
       .desc("article"),
 
     and: (r) => P.seq(
       r.__,
-      P.string("and"),
+      pm.word("and"),
       r.__).desc("and"),
 
     tiling: (r) => P.seqObj(
@@ -1160,15 +1254,15 @@ pm.parser = function() {
     // ex. "x 1/5 y 1 z -7"
     // ex. "x 5 y 0 z 0"
     vector: (r) => P.seqObj(
-      P.string("x"),
+      pm.word("x"),
       r.__,
       ["x", r.fraction],
       r.__,
-      P.string("y"),
+      pm.word("y"),
       r.__,
       ["y", r.fraction],
       r.__,
-      P.string("z"),
+      pm.word("z"),
       r.__,
       ["z", r.fraction]
     ),
@@ -1215,11 +1309,11 @@ pm.parser = function() {
     hexDigit: () => P.regexp(/[0-9a-f]/i)
       .desc("hex digit"),
 
-    endBlock: (r) => P.string("end"),
+    endBlock: (r) => pm.word("end"),
 
     startMap: (r) => 
       P.seq(
-        P.string("map named"),
+        pm.wordList(r, "map named"),
         r.__)
       .then(r.quotedString),
 
@@ -1256,20 +1350,20 @@ pm.parser = function() {
       r.endBlock
     ).node("mapBlock"),
 
-    startKey: (r) => P.string("key"),
+    startKey: (r) => pm.word("key"),
 
     // test: testParseKeyAssignment
     keyAssignment: (r) => P.seqObj(
         ["symbol", r.tileSymbol],
         r.__,
-        P.string("is for"),
+        pm.wordList(r, "is for"),
         r.__,
         ["name", r.quotedString]
     ),
 
     // test: testParseInKeyFeatureList
     inKeyFeatureList: (r) => P.seq(
-      P.string("with"),
+      pm.word("with"),
       r.__)
       .then(r.featureList),
 
@@ -1291,73 +1385,88 @@ pm.parser = function() {
     }),
 
     colorOption: (r) => P.seq(
-      P.string("with color"),
+      pm.wordList(r, "with color"),
       r.__)
       .then(r.hexColor)
       .map(x => ({type: pm.featureOption.COLOR, 
                   color: x})),
 
     secondaryColorOption: (r) => P.seq(
-      P.string("with secondary color"),
+      pm.wordList(r, "with secondary color"),
       r.__)
       .then(r.hexColor)
       .map(x => ({type: pm.featureOption.SECONDARY_COLOR, 
                   secondaryColor: x})),
 
     scaleOption: (r) => P.seq(
-      P.string("with scale"),
+      pm.wordList(r, "with scale"),
       r.__)
       .then(r.fraction)
       .map(x => ({type: pm.featureOption.SCALE, 
                   scale: x})),
 
     nudgeOption: (r) => P.seq(
-      P.string("with nudge"),
+      pm.wordList(r, "with nudge"),
       r.__)
       .then(r.vector.sepBy1(r.__))
       .map(n => ({type: pm.featureOption.NUDGE, 
                   vector: n})),
 
     intensityOption: (r) => P.seq(
-      P.string("with intensity"),
+      pm.wordList(r, "with intensity"),
       r.__)
     .then(r.fraction)
     .map(x => ({type: pm.featureOption.INTENSITY, 
                 intensity: x})),
 
     distanceOption: (r) => P.seq(
-      P.string("with distance"),
+      pm.wordList(r, "with distance"),
       r.__)
     .then(r.fraction)
     .map(x => ({type: pm.featureOption.DISTANCE, 
                 distance: x})),
 
     patternOption: (r) => P.seqObj(
-      P.string("with pattern"),
+      pm.wordList(r, "with pattern"),
       r.__,
       ["name", P.alt(
         r.quotedString, 
-        P.string("noise").result("__noise")
+        pm.word("noise").result("__noise")
       )],
       ["tiling", r.__.then(r.tiling).fallback([1,1])]
     ).map(x => Object.assign(x, {type: pm.featureOption.PATTERN})),
 
+    switchOption: (r) => P.seqObj(
+      pm.wordList(r, "when switch"),
+      r.__,
+      ["name", r.quotedString],
+      r.__
+      pm.word("is"),
+      r.__
+      ["value", r.quotedString]
+    ).map(x => Object.assign(x, {type: pm.featureOption.SWITCH})),
+
     promptOption: (r) => P.seqObj(
-      P.string("with prompt"),
+      pm.wordList(r, "with prompt"),
       r.__,
       ["text", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.featureOption.PROMPT})),
 
+    topicPage: (r) => P.alt(
+      r.quotedString,
+      r.command
+    ),
+
     topicOption: (r) => P.seqObj(
-      P.string("with topic"),
+      pm.wordList(r, "with topic"),
       r.__,
       ["name", r.quotedString],
       r.__,
-      ["text", r.quotedString.sepBy1(r.__)]
+      ["text", r.topicPage.sepBy1(r.__)]
     ).map(x => Object.assign(x, {type: pm.featureOption.TOPIC})),
 
     greetingOption: (r) => P.seqObj(
-      P.string("with greeting"),
+      pm.wordList(r, "with greeting"),
       r.__,
       ["text", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.featureOption.GREETING})),
@@ -1369,13 +1478,13 @@ pm.parser = function() {
       r.nudgeOption),
 
     geometryName: (r) => P.alt(
-      P.string("box").result(pm.meshes.BOX),
-      P.string("ball").result(pm.meshes.BALL)
+      pm.word("box").result(pm.meshes.BOX),
+      pm.word("ball").result(pm.meshes.BALL)
     ),
 
     meshFeature: (r) => P.seqObj(
       ["geometry", r.geometryName],
-      ["options", optionParser(r, r.meshOption)]
+      ["options", optionParser(r, r.meshOption, r.switchOption)]
     ).map(x => Object.assign(x, {type: pm.feature.MESH})),
 
     lightOption: (r) => P.alt(
@@ -1387,26 +1496,30 @@ pm.parser = function() {
 
     lightFeature: (r) => P.seqObj(
       ["lightType", P.alt(
-        P.string("point"), 
-        P.string("directional"), 
-        P.string("hemisphere"))],
+        pm.word("point"), 
+        pm.word("directional"), 
+        pm.word("hemisphere"))],
       r.__,
-      P.string("light"),
-      ["options", optionParser(r, r.lightOption)]
+      pm.word("light"),
+      ["options", optionParser(r, r.lightOption, r.switchOption)]
     ).map(x => Object.assign(x, {type: pm.feature.LIGHT})),
 
     actionFeature: (r) => P.seqObj(
-      P.string("can"),
+      pm.word("can"),
       r.__,
-      ["name", r.quotedString]
+      ["name", r.quotedString],
+      ["options", optionParser(r, r.switchOption)]
     ).map(x => Object.assign(x, {type: pm.feature.ACTION})),
 
-    wallFeature: (r) => P.string("wall")
-      .result({type: pm.feature.WALL}),
+    wallFeature: (r) => P.seqObj(
+      pm.word("wall"),
+      ["options", optionParser(r, r.switchOption)]
+    ).map(x => Object.assign(x, {type: pm.feature.WALL})),
 
     itemFeature: (r) => P.seqObj(
-      ["undroppable", P.seq(P.string("undroppable"), r.__).fallback(false)],
-      P.string("item")
+      ["undroppable", P.seq(pm.word("undroppable"), r.__).fallback(false)],
+      pm.word("item"),
+      ["options", optionParser(r, r.switchOption)]
     ).map(x => Object.assign(x, {type: pm.feature.ITEM})),
 
     chatOption: (r) => P.alt(
@@ -1415,8 +1528,8 @@ pm.parser = function() {
       r.greetingOption),
 
     chatFeature: (r) => P.seqObj(
-      P.string("chat"),
-      ["options", optionParser(r, r.chatOption)]
+      pm.word("chat"),
+      ["options", optionParser(r, r.chatOption, r.switchOption)]
     ).map(x => Object.assign(x, {type: pm.feature.CHAT})),
 
     feature: (r) => r.article
@@ -1442,7 +1555,7 @@ pm.parser = function() {
     ).node("keyBlock"),
 
     startPattern: (r) => P.seq(
-      P.string("pattern named"),
+      pm.wordList(r, "pattern named"),
       r.__)
     .then(r.quotedString),
 
@@ -1457,7 +1570,7 @@ pm.parser = function() {
     ).node("patternBlock"),
 
     startAboutBlock: (r) => P.seq(
-      P.string("about"),
+      pm.word("about"),
       r.__)
     .then(r.quotedString),
 
@@ -1470,7 +1583,7 @@ pm.parser = function() {
     ).node("aboutBlock"),
 
     startingTopicsBlock: (r) => P.seqObj(
-      P.string("starting topics"),
+      pm.wordList(r, "starting topics"),
       r.__,
       ["topics", r.quotedString.sepBy(r.__)],
       r.__,
@@ -1478,7 +1591,7 @@ pm.parser = function() {
     ).node("startingTopicsBlock"),
 
     startStartingItemsBlock: (r) => P.seq(
-      P.string("starting items for"),
+      pm.wordList(r, "starting items for"),
       r.__)
     .then(r.quotedString),
 
@@ -1488,7 +1601,7 @@ pm.parser = function() {
       ["items", P.seq(
         r.quantity,
         r.__,
-        P.string("of"),
+        pm.word("of"),
         r.__,
         r.quotedString,
       ).sepBy(r.__)],
@@ -1497,52 +1610,52 @@ pm.parser = function() {
     ).node("startingItemsBlock"),
 
     startUseItemBlock: (r) => P.seqObj(
-      P.string("to use"),
+      pm.wordList(r, "to use"),
       r.__,
       ["name", r.quotedString],
       ["target", P.seq(
         r.__,
-        P.string("with"),
+        pm.word("with"),
         r.__)
         .then(r.quotedString)
         .fallback(null)
       ]
     ),
 
-    commandAddTopic: (r) => P.seqObj(
-      P.string("add topic"),
+    commandGainTopic: (r) => P.seqObj(
+      pm.wordList(r, "gain topic"),
       r.__,
       ["topic", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.ADD_TOPIC})),
+    ).map(x => Object.assign(x, {type: pm.command.GAIN_TOPIC})),
 
-    commandRemoveTopic: (r) => P.seqObj(
-      P.string("remove topic"),
+    commandLoseTopic: (r) => P.seqObj(
+      pm.wordList(r, "lose topic"),
       r.__,
       ["topic", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.REMOVE_TOPIC})),
+    ).map(x => Object.assign(x, {type: pm.command.LOSE_TOPIC})),
 
     commandGainItem: (r) => P.seqObj(
-      P.string("gain"),
+      pm.word("gain"),
       r.__,
       ["quantity", r.quantity],
       r.__,
       ["itemName", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.GAIN_ITEM})),
 
-    commandGoodbye: (r) => P.seqObj(
-      P.string("goodbye"),
+    commandSwitchOff: (r) => P.seqObj(
+      pm.wordList(r, "switch off"),
       r.__,
       ["name", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.GOODBYE})),
+    ).map(x => Object.assign(x, {type: pm.command.SWITCH_OFF})),
 
-    commandHello: (r) => P.seqObj(
-      P.string("hello"),
+    commandSwitchOn: (r) => P.seqObj(
+      pm.wordList(r, "switch on"),
       r.__,
       ["name", r.quotedString]
-    ).map(x => Object.assign(x, {type: pm.command.HELLO})),
+    ).map(x => Object.assign(x, {type: pm.command.SWITCH_ON})),
 
     commandLoseItem: (r) => P.seqObj(
-      P.string("lose"),
+      pm.word("lose"),
       r.__,
       r.quantity,
       r.__,
@@ -1550,18 +1663,18 @@ pm.parser = function() {
     ).map(x => Object.assign(x, {type: pm.command.LOSE_ITEM})),
 
     commandSay: (r) => P.seqObj(
-      P.string("say"),
+      pm.word("say"),
       r.__,
       ["topic", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.SAY})),
 
     command: (r) => P.alt(
-      r.commandAddTopic,
-      r.commandRemoveTopic,
+      r.commandGainTopic,
+      r.commandLoseTopic,
       r.commandGainItem,
-      r.commandGoodbye,
-      r.commandHello,
       r.commandLoseItem,
+      r.commandSwitchOn,
+      r.commandSwitchOff,
       r.commandSay
     ),
 
@@ -1590,6 +1703,7 @@ pm.parser = function() {
 
   return lang;
 };
+
 
   // TinyTest is by Joe Walnes. I made minor modifications.
   // TinyTest is under MIT License. See https://github.com/joewalnes/jstinytest/
@@ -1731,6 +1845,13 @@ pm.parser = function() {
         eq(p.tryParse("0xff0000"), 0xff0000);
         eq(p.tryParse("#ff0000"), 0xff0000);
         eq(p.tryParse("#00ff00"), 0x00ff00);
+      },
+
+      "testParseWordList": function() {
+        let p = pm.wordList(pm.parser(), "this is words");
+        let v = p.tryParse("this is words");
+        eq(v.length, 3);
+        eq(v[1], "is");
       }
     });
   };
