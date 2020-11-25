@@ -583,7 +583,7 @@ pm.MeshFeature.prototype.build = function(tile) {
 
   // nudge
   let nudge = maze.getOption(this, pm.option.NUDGE);
-  if (nudge) {
+  if (nudge !== undefined) {
     this.mesh.position.set(
       nudge.vector.x, nudge.vector.y, nudge.vector.z);
   }
@@ -618,7 +618,6 @@ pm.MeshFeature.prototype.switchOff = function() {
 };
 
 pm.MeshFeature.prototype.updateSwitchedOptions = function() {
-  // for now, simply destroy and rebuild
   this.destroy();
   this.build(this.tile);
 };
@@ -632,6 +631,7 @@ pm.AnchorFeature = function(sw, options) {
 
 pm.AnchorFeature.prototype.build = function(tile) {
   this.tile = tile;
+  this.tile.root.add(this.root);
   let maze = tile.map.maze;
 
   // scale
@@ -670,6 +670,8 @@ pm.AnchorFeature.prototype.switchOff = function() {
 };
 
 pm.AnchorFeature.prototype.updateSwitchedOptions = function() {
+  this.destroy();
+  this.build(this.tile);
 };
 
 // Chat
@@ -852,15 +854,21 @@ pm.Tile.prototype.setObjectAnchorByName = function(childObject, parentName) {
   // search for a 3d object in this tile's hierarchy with the given name, and
   // set obj's parent to this object. if the tile hierarchy is under
   // construction, queue this action until the end.
+
   let root = this.root;
+  let maze = this.map.maze;
+
   let f = function() {
-    let found = false;
+    let newParent = null;
     root.traverse(function(obj) {
-      if (obj.name == parentName && !found) {
-        childObject.parent = obj;
-        found = true;
-      }
+      if (obj.name == parentName && newParent === null) 
+        newParent = obj;
     });
+
+    if (newParent != null) {
+      maze.scene.attach(childObject);
+      newParent.attach(childObject);
+    }
   };
 
   if (this.underConstruction)
@@ -1132,8 +1140,9 @@ pm.Maze.prototype.runCommand = function(c) {
 }
 
 pm.Maze.prototype.checkSwitch = function(switchToCheck, def=true) {
-  if (switchToCheck === undefined || switchToCheck === null)
+  if (switchToCheck === undefined || switchToCheck === null) {
     return def;
+  }
 
   let switchActual = this.switches.find(s => s.name == switchToCheck.name);
   return switchActual.value == switchToCheck.value;
@@ -1552,7 +1561,7 @@ pm.parser = function() {
           sum.z += p.z;
         }
         return sum;
-      }).desc("vector"),
+      }),
 
     // a number can be:
     // - a constant 
@@ -1578,8 +1587,7 @@ pm.parser = function() {
       ["numerator", r.integer],
       P.string("/"),
       ["denominator", r.integer]
-    ).map(x => x.sign * x.numerator/x.denominator)
-    .desc("fraction"),
+    ).map(x => x.sign * x.numerator/x.denominator),
 
     number: (r) => P.alt(
       r.fraction,
@@ -1797,7 +1805,7 @@ pm.parser = function() {
       r.nameOption,
       r.anchorOption),
 
-    anchorOption: (r) => P.alt(
+    anchorFeatureOption: (r) => P.alt(
       r.scaleOption,
       r.anchorOption,
       r.nameOption,
@@ -1854,7 +1862,7 @@ pm.parser = function() {
     anchorFeature: (r) => P.seqObj(
       pm.word("anchor"),
       ["switch", r.optWhenSwitch],
-      ["options", optionParser(r, r.anchorOption)]
+      ["options", optionParser(r, r.anchorFeatureOption)]
     ).map(x => new pm.AnchorFeature(x.switch, x.options)),
 
     wallFeature: (r) => P.seqObj(
@@ -2197,32 +2205,8 @@ pm.parser = function() {
         let code = `
           key
             1 is for "start"
-            # is for "panel" with a wall and
-                            a box with color #8833aa
-                                  with pattern "thin stripes" 4x4
-            * is for "torch" with a point light with color #39FF14 
-                                          with intensity 4/5
-            ? is for "lantern" with a point light with color #aa2164
-            ! is for "potion" with an item
-                             and a box with color #ff0000
-                             and a point light with color #ff0034
-            M is for "minotaur"
-            & is for "heart" with an undroppable item
-            o is for "loupe" with an undroppable item
-          end
-
-          map named "start"
-                   #################
-                   #* M        #   #
-                   # #    #    #   #  ##########
-                   #      #        #  #  !  #  #
-                   ##   # ##### #######        #
-              ######   !*                 ###  #
-              # *     ######### ########     ! #
-            #######  #        # #      #########
-            #1      ?########## #
-            ##########          #
-                     ############
+            # is for "panel" with a wall 
+                and a box 
           end
         `;
 
