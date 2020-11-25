@@ -16,7 +16,7 @@ bugs:
 - nested comments don't work, and also if you try to
   comment out a string with a close paren it will break.
 -->
-<html><head><title>pet minotaur</title></head><body><div id="noload">the minotaur is missing ...</div><div id="test-result"></div></body>
+<html><head><title>pet minotaur</title></head>
 
 <script type="text/minotaur">
 (
@@ -28,24 +28,79 @@ bugs:
 )
 
 map named "start"
-#######
-#*1M *#
-#######
+##########################
+#*1    ?          ?   M *#
+##################+#######
+                 # #
+                 # #
+                 # #
+                 # #
+                 #*#
+                 # #
+################## ####
+#       *             #
+#                     #
+#  *         *        #
+#######################
+
 end
 
 key
   1 is for "start"
+
+
+  (P is for "portrait" with 
+    a box
+      with image "karl"
+    and a ball
+      with scale 1/8
+      with color #ff0000
+      with nudge up 1/14 left 1/14
+    and a ball
+      with scale 1/8
+      with color #ff0000
+      with nudge up 1/14 right 1/14
+    and a ball
+      with scale 1/8
+      with color #ff0000)
+
+
+
   # is for "wall" with
       a wall 
       and a box 
-        with color #ffffff
-        with pattern noise
+        with color #efc5ca
+        with pattern "zags" 2x1
   M is for "minotaur"
+  ? is for "light" with
+      a point light
+        with distance 3
+        with color #ffffff
+        with intensity 1
+
   * is for "lamp" with 
       a point light 
         with distance 5
         with color #FF0000
         with intensity 2
+  + is for "door" with 
+        a box when switch "door" is "closed"
+          with color #aa0088 
+          with pattern "thin grid" 1x8
+        and a wall when switch "door" is "closed"
+        and a ball when switch "door" is "closed"
+          with pattern "thick grid" 1x1
+          with scale 1/8
+          with nudge left 1/2
+        and a chat with prompt "door"
+          with topic "open the door"
+                     switch "door" to "open"
+                     gain topic "close the door"
+                     lose topic "open the door"
+          with topic "close the door"
+                     switch "door" to "closed"
+                     gain topic "open the door"
+                     lose topic "close the door"
 end
 
 about "minotaur"
@@ -58,6 +113,7 @@ about "minotaur"
 
   and a ball
     with scale 1/2
+    with turn right 1/4
     with name "head"
     with anchor "feet"
     with scale 1/8 when switch "minotaur wall" is "off"
@@ -97,11 +153,13 @@ starting topics
   "pass"
   "the beach"
   "fur"
+  "open the door"
 end
 
 switches
   "minotaur wall" can be "on" or "off"
   "minotaur mood" can be "chill" or "irritable"
+  "door" can be "closed" or "open"
 end
 
 (dance named "wiggle"
@@ -133,6 +191,25 @@ pattern named "thin stripes"
   F000F000F000F000
   F000F000F000F000
   F000F000F000F000
+end
+
+pattern named "zags"
+  F000FF00F000F000
+  FF00F0F0FF00F000
+  F0F0F00FF0F0F000
+  F00FF000F00FF000
+  FF00F000FF00F000
+  F0F0FF00F0F0FF00
+  F00FF0F0F00FF0F0
+  F000F00FF000F00F
+  F000FF00F000FF00
+  F000F0F0FF00F0F0
+  F000F00FF0F0F00F
+  F000F000F00FF000
+  FF00F000FF00F000
+  F0F0F000F0F0FF00
+  F00FF000F00FF0F0
+  F00FF000F000F00F
 end
 
 pattern named "thick stripes"
@@ -201,6 +278,10 @@ end
 )
 </script>
 
+<body><div id="noload">the minotaur is missing ...</div><div id="test-result"></div>
+
+  <!-- this is as good a place as any to put embedded and other resources -->
+</body>
 <!-- 
 // --------------------------------------------------------------
 // #css -- style sheet for ui
@@ -209,6 +290,7 @@ end
 
 <style type="text/css">
 body { margin: 0; }
+img.texture { display: none; }
 canvas {
 /* Permalink - use to edit and share this gradient: https://colorzilla.com/gradient-editor/#efc5ca+0,d24b5a+50,ba2737+51,f18e99+100;Red+Gloss+%233 */
 background: #efc5ca; /* Old browsers */
@@ -281,20 +363,22 @@ let log = console.log;
 // #constants
 // --------------------------------------------------------------
 pm.option = {
+  ANCHOR: Symbol("anchor"),
   COLOR: Symbol("color"),
   DISTANCE: Symbol("distance"),
-  SWITCH: Symbol("switch"),
   GEOMETRY: Symbol("geometry"),
   GREETING: Symbol("greeting"),
+  IMAGE: Symbol("image"),
   INTENSITY: Symbol("intensity"),
   NAME: Symbol("name"),
   NUDGE: Symbol("nudge"),
-  ANCHOR: Symbol("anchor"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
   SCALE: Symbol("scale"),
   SECONDARY_COLOR: Symbol("secondary color"),
-  TOPIC: Symbol("topic")
+  SWITCH: Symbol("switch"),
+  TOPIC: Symbol("topic"),
+  TURN: Symbol("turn")
 };
 
 pm.key = {
@@ -416,6 +500,7 @@ pm.createTexture = function(pixels) {
   let t = new THREE.DataTexture(data, width, height, THREE.LuminanceFormat, THREE.UnsignedByteType);
   t.needsUpdate = true;
   t.magFilter = THREE.NearestFilter;
+  //t.magFilter = THREE.LinearFilter;
   return t;
 };
 
@@ -434,6 +519,15 @@ pm.noisePattern = function(width, height) {
   }
 
   return pattern;
+};
+
+// images should be base64-encoded in the src attribute of an img tag.
+// use the img tag's id to refer to it here.
+pm.createImageTexture = function(name) {
+  let el = document.getElementById(name);
+  let texture = new THREE.Texture(el);
+  texture.needsUpdate = true;
+  return texture;
 };
 
 pm.word = function(s) {
@@ -555,7 +649,7 @@ pm.MeshFeature.prototype.build = function(tile) {
   if (hexColor !== undefined)
     matOptions.color = hexColor.color;
 
-  // texture
+  // pattern
   let patternOption = maze.getOption(this, pm.option.PATTERN);
   let texture;
   if (patternOption !== undefined) {
@@ -573,6 +667,17 @@ pm.MeshFeature.prototype.build = function(tile) {
     matOptions.map = texture;
   }
 
+  // image texture
+  let imageOption = maze.getOption(this, pm.option.IMAGE);
+  let imageTexture;
+  if (imageOption !== undefined) {
+    imageTexture = pm.createImageTexture(imageOption.name);
+    imageTexture.wrapS = THREE.RepeatWrapping;
+    imageTexture.wrapT = THREE.RepeatWrapping;
+    imageTexture.repeat.set(imageOption.tiling[0], imageOption.tiling[1]);
+    //imageTexture.rotation = 0.65;
+    matOptions.map = imageTexture;
+  }
   this.mat = new THREE.MeshLambertMaterial(matOptions);
   this.mesh = new THREE.Mesh(this.bufGeo, this.mat);
 
@@ -586,6 +691,13 @@ pm.MeshFeature.prototype.build = function(tile) {
   if (nudge !== undefined) {
     this.mesh.position.set(
       nudge.vector.x, nudge.vector.y, nudge.vector.z);
+  }
+
+  // turn
+  let turn = maze.getOption(this, pm.option.TURN);
+  if (turn !== undefined) {
+    this.mesh.rotation.set(
+      turn.vector.x, turn.vector.y, turn.vector.z);
   }
 
   // name
@@ -884,6 +996,7 @@ pm.Maze = function() {
   this.maps = [];
   this.currentMap = null;
   this.patterns = [];
+  this.images = [];
   this.itemHandlers = [];
   this.startingItems = [];
   this.player = new pm.Player(this);
@@ -1589,9 +1702,16 @@ pm.parser = function() {
       ["denominator", r.integer]
     ).map(x => x.sign * x.numerator/x.denominator),
 
+    /*
+    dance: (r) => P.seq(
+      pm.word("dance"),
+      r.quotedString
+    ),*/
+
     number: (r) => P.alt(
       r.fraction,
       r.integer
+      //r.dance
     ),
 
     // todo -- other types of quantity:
@@ -1722,6 +1842,13 @@ pm.parser = function() {
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.SCALE})), 
 
+    turnOption: (r) => P.seqObj(
+      pm.wordList(r, "with turn"),
+      r.__,
+      ["vector", r.vector],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.TURN})), 
+
     // testParseNudgeOption
     nudgeOption: (r) => P.seqObj(
       pm.wordList(r, "with nudge"),
@@ -1769,6 +1896,14 @@ pm.parser = function() {
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.PATTERN})),
 
+    imageOption: (r) => P.seqObj(
+      pm.wordList(r, "with image"),
+      r.__,
+      ["name", r.quotedString],
+      ["tiling", r.__.then(r.tiling).fallback([1,1])],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.IMAGE})),
+
     promptOption: (r) => P.seqObj(
       pm.wordList(r, "with prompt"),
       r.__,
@@ -1800,7 +1935,9 @@ pm.parser = function() {
     meshOption: (r) => P.alt(
       r.colorOption,
       r.patternOption,
+      r.imageOption,
       r.scaleOption,
+      r.turnOption,
       r.nudgeOption,
       r.nameOption,
       r.anchorOption),
