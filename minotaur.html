@@ -4,8 +4,13 @@ pet minotaur, version 0.
 
 edit the script below.
 
+todo:
+- anchor feature, just a named transform
+- move name option into feature def like "an anchor named 'feet'"
+- floor elevation
+
 commands todo:
-- draw command
+- draw command, swap tiles?
 
 bugs:
 - nested comments don't work, and also if you try to
@@ -45,16 +50,26 @@ end
 
 about "minotaur"
   a wall when switch "minotaur wall" is "on"
-  and a ball 
-    with scale 2/4 when switch "minotaur wall" is "on"
-    with scale 1/6 when switch "minotaur wall" is "off"
+
+  and an anchor
+    with name "feet"
+    with nudge left 1/2
+      when switch "minotaur wall" is "off"
+
+  and a ball
+    with scale 1/2
+    with name "head"
+    with anchor "feet"
+    with scale 1/8 when switch "minotaur wall" is "off"
     with color #2781ba
     with pattern "thick stripes" 2x1
 
-  and a chat when switch "minotaur chat" is "on"
+  and a chat when switch "minotaur wall" is "on"
     with prompt "talk to the minotaur"
-    with greeting "hi!" when switch "minotaur mood" is "chill"
-    with greeting "it's you" when switch "minotaur mood" is "irritable"
+    with greeting "hi!" 
+      when switch "minotaur mood" is "chill"
+    with greeting "it's you" 
+      when switch "minotaur mood" is "irritable"
     with topic "the beach"
                "no i haven't been to the beach lately"
                "i basically never leave the maze lol"
@@ -87,8 +102,14 @@ end
 switches
   "minotaur wall" can be "on" or "off"
   "minotaur mood" can be "chill" or "irritable"
-  "minotaur chat" can be "on" or "off"
 end
+
+(dance named "wiggle"
+  up 1/4 for 1 step
+  wait for 2 steps
+  down 1/4 for 1 step
+  wait for 2 steps
+end)
 
 to use "loupe" with "minotaur"
   say "the minotaur has fleas"
@@ -266,6 +287,9 @@ pm.option = {
   GEOMETRY: Symbol("geometry"),
   GREETING: Symbol("greeting"),
   INTENSITY: Symbol("intensity"),
+  NAME: Symbol("name"),
+  NUDGE: Symbol("nudge"),
+  ANCHOR: Symbol("anchor"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
   SCALE: Symbol("scale"),
@@ -372,10 +396,6 @@ pm.dirLeft = function(dir) {
     case pm.dir.EAST:
       return pm.dir.NORTH;
   }
-};
-
-pm.getOption = function(feature, optionSymbol) {
-  return feature.options.find(x => x.type === optionSymbol);
 };
 
 pm.createTexture = function(pixels) {
@@ -510,36 +530,40 @@ pm.MeshFeature = function(geo, sw, options) {
   this.geometry = geo;
   this.switch = sw;
   this.options = options;
+  this.bufGeo = null;
+  this.mesh = null;
+  this.mat = null;
 };
 
 pm.MeshFeature.prototype.build = function(tile) {
   this.tile = tile;
-  let bg;
+  let maze = tile.map.maze;
+
   switch (this.geometry) {
     case pm.meshes.BOX:
-      bg = new THREE.BoxBufferGeometry();
+      this.bufGeo = new THREE.BoxBufferGeometry();
       break;
     case pm.meshes.BALL:
-      bg = new THREE.SphereBufferGeometry();
+      this.bufGeo = new THREE.SphereBufferGeometry();
       break;
   };
 
   let matOptions = {};
 
   // color
-  let hexColor = pm.getOption(this, pm.option.COLOR);
+  let hexColor = maze.getOption(this, pm.option.COLOR);
   if (hexColor !== undefined)
     matOptions.color = hexColor.color;
 
   // texture
-  let patternOption = pm.getOption(this, pm.option.PATTERN);
+  let patternOption = maze.getOption(this, pm.option.PATTERN);
   let texture;
   if (patternOption !== undefined) {
     let pattern;
     if (patternOption.name == "__noise") 
       pattern = pm.noisePattern(64,64);
     else
-      pattern = tile.map.maze.patterns.find(x => x.name == patternOption.name);
+      pattern = maze.patterns.find(x => x.name == patternOption.name);
 
     texture = pm.createTexture(pattern.pixels);
     texture.wrapS = THREE.RepeatWrapping;
@@ -550,18 +574,39 @@ pm.MeshFeature.prototype.build = function(tile) {
   }
 
   this.mat = new THREE.MeshLambertMaterial(matOptions);
-  this.mesh = new THREE.Mesh(bg, this.mat);
+  this.mesh = new THREE.Mesh(this.bufGeo, this.mat);
 
   // scale
-  let scaleOption = pm.getOption(this, pm.option.SCALE);
-  let scale = pm.getOption(this, pm.option.SCALE);
+  let scale = maze.getOption(this, pm.option.SCALE);
   if (scale !== undefined)
     this.mesh.scale.set(scale.scale, scale.scale, scale.scale);
+
+  // nudge
+  let nudge = maze.getOption(this, pm.option.NUDGE);
+  if (nudge) {
+    this.mesh.position.set(
+      nudge.vector.x, nudge.vector.y, nudge.vector.z);
+  }
+
+  // name
+  let nameOption = maze.getOption(this, pm.option.NAME);
+  if (nameOption !== undefined)
+    this.mesh.name = nameOption.name;
+
+  // anchor
+  let anchorOption = maze.getOption(this, pm.option.ANCHOR);
+  if (anchorOption !== undefined) 
+    tile.setObjectAnchorByName(this.mesh, anchorOption.name);
 
   tile.root.add(this.mesh);
 };
 
 pm.MeshFeature.prototype.destroy = function() {
+  this.tile.root.remove(this.mesh);
+  this.mesh = null;
+  this.mat.dispose();
+  this.bufGeo.dispose();
+  this.mat = this.bufGeo = null;
 };
 
 pm.MeshFeature.prototype.switchOn = function() {
@@ -573,6 +618,58 @@ pm.MeshFeature.prototype.switchOff = function() {
 };
 
 pm.MeshFeature.prototype.updateSwitchedOptions = function() {
+  // for now, simply destroy and rebuild
+  this.destroy();
+  this.build(this.tile);
+};
+
+// Anchor
+pm.AnchorFeature = function(sw, options) {
+  this.options = options;
+  this.switch = sw;
+  this.root = new THREE.Object3D();
+};
+
+pm.AnchorFeature.prototype.build = function(tile) {
+  this.tile = tile;
+  let maze = tile.map.maze;
+
+  // scale
+  let scale = maze.getOption(this, pm.option.SCALE);
+  if (scale !== undefined)
+    this.root.scale.set(scale.scale, scale.scale, scale.scale);
+
+  // nudge
+  let nudge = maze.getOption(this, pm.option.NUDGE);
+  if (nudge) {
+    this.root.position.set(
+      nudge.vector.x, nudge.vector.y, nudge.vector.z);
+  }
+
+  // name
+  let nameOption = maze.getOption(this, pm.option.NAME);
+  if (nameOption !== undefined)
+    this.root.name = nameOption.name;
+
+  // anchor
+  let anchorOption = maze.getOption(this, pm.option.ANCHOR);
+  if (anchorOption !== undefined) 
+    tile.setObjectAnchorByName(this.root, anchorOption.name);
+};
+
+pm.AnchorFeature.prototype.destroy = function() {
+  this.tile.root.remove(this.root);
+};
+
+pm.AnchorFeature.prototype.switchOn = function() {
+  this.tile.root.add(this.root);
+};
+
+pm.AnchorFeature.prototype.switchOff = function() {
+  this.tile.root.remove(this.root);
+};
+
+pm.AnchorFeature.prototype.updateSwitchedOptions = function() {
 };
 
 // Chat
@@ -622,12 +719,12 @@ pm.LightFeature = function(lightType, sw, options) {
   this.lightType = lightType;
   this.switch = sw;
   this.options = options;
+  this.light = null;
 };
 
 pm.LightFeature.prototype.build = function(tile) {
-  let light;
-  let colorOption = pm.getOption(this, pm.option.COLOR);
-  let secondaryColorOption = pm.getOption(this, pm.option.SECONDARY_COLOR);
+  let colorOption = tile.map.maze.getOption(this, pm.option.COLOR);
+  let secondaryColorOption = tile.map.maze.getOption(this, pm.option.SECONDARY_COLOR);
   let color, secondaryColor;
 
   if (colorOption != undefined)
@@ -642,37 +739,45 @@ pm.LightFeature.prototype.build = function(tile) {
 
   switch (this.lightType) {
     case "point":
-      light = new THREE.PointLight(color);
+      this.light = new THREE.PointLight(color);
       break;
     case "directional":
-      light = new THREE.DirectionalLight(color);
+      this.light = new THREE.DirectionalLight(color);
       break;
     case "hemisphere":
-      light = new THREE.HemisphereLight(color, secondaryColor);
+      this.light = new THREE.HemisphereLight(color, secondaryColor);
       break;
   }
 
-  let intensityOption = pm.getOption(this, pm.option.INTENSITY);
+  let intensityOption = tile.map.maze.getOption(this, pm.option.INTENSITY);
   if (intensityOption !== undefined)
-    light.intensity = intensityOption.intensity;
+    this.light.intensity = intensityOption.intensity;
 
-  let distanceOption = pm.getOption(this, pm.option.DISTANCE);
+  let distanceOption = tile.map.maze.getOption(this, pm.option.DISTANCE);
   if (distanceOption !== undefined)
-    light.distance = distanceOption.distance;
+    this.light.distance = distanceOption.distance;
 
-  tile.root.add(light);
+  tile.root.add(this.light);
 };
 
 pm.LightFeature.prototype.destroy = function() {
+  tile.root.remove(this.light);
+  this.light.dispose();
+  this.light = null;
 };
 
 pm.LightFeature.prototype.switchOn = function() {
+  this.light.visible = true;
 };
 
 pm.LightFeature.prototype.switchOff = function() {
+  this.light.visible = false;
 };
 
 pm.LightFeature.prototype.updateSwitchedOptions = function() {
+  // for now, simply destroy and rebuild
+  this.destroy();
+  this.build(this.tile);
 };
 
 // Wall
@@ -697,6 +802,7 @@ pm.WallFeature.prototype.switchOff = function() {
 };
 
 pm.WallFeature.prototype.updateSwitchedOptions = function() {
+  // no-op, wall has no options
 };
 
 // --------------------------------------------------------------
@@ -711,6 +817,8 @@ pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
   this.root.rotateY(-Math.PI/2);
   this.dir = pm.dir.EAST;
   this.name = tileName;
+  this.underConstruction = false;
+  this.q = [];
 };
 
 pm.Tile.prototype.hasFeature = function(FeatureType) {
@@ -722,17 +830,44 @@ pm.Tile.prototype.getFeature = function(FeatureType) {
 };
 
 pm.Tile.prototype.build = function() {
+  this.underConstruction = true;
   this.map.root.add(this.root);
   this.root.position.set(this.x, 0, this.y);
 
   for (let f of this.featureList) {
     f.build(this);
-    if (f.switch != null) {
-      if (!this.map.maze.checkSwitch(f.switch))
-        f.switchOff();
-    }
+    if (!this.map.maze.checkSwitch(f.switch, true))
+      f.switchOff();
   }
-}
+
+  this.underConstruction = false;
+
+  for (let f of this.q) 
+    f();
+
+  this.q.length = 0;
+};
+
+pm.Tile.prototype.setObjectAnchorByName = function(childObject, parentName) {
+  // search for a 3d object in this tile's hierarchy with the given name, and
+  // set obj's parent to this object. if the tile hierarchy is under
+  // construction, queue this action until the end.
+  let root = this.root;
+  let f = function() {
+    let found = false;
+    root.traverse(function(obj) {
+      if (obj.name == parentName && !found) {
+        childObject.parent = obj;
+        found = true;
+      }
+    });
+  };
+
+  if (this.underConstruction)
+    this.q.push(f);
+  else
+    f();
+};
 
 // --------------------------------------------------------------
 // #maze -- the main runtime class
@@ -827,6 +962,11 @@ pm.Maze.prototype.setupGraphics = function() {
   this.root.add(light);
   this.renderer = new THREE.WebGLRenderer({alpha: true});
   this.renderer.setSize(width, height);
+};
+
+pm.Maze.prototype.getOption = function(feature, optionSymbol) {
+  return feature.options.find(x => x.type === optionSymbol &&
+                                   this.checkSwitch(x.switch, true));
 };
 
 // --------------------------------------------------------------
@@ -925,6 +1065,7 @@ pm.Maze.prototype.animate = function() {
 // show the player's options
 pm.Maze.prototype.updateMaze = function() {
   let stopPlayer = false;
+  let maze = this;
 
   // the cell in front of the player
   let [fx,fy] = pm.offsetPoint(this.player.x, this.player.y, this.player.dir);
@@ -934,7 +1075,7 @@ pm.Maze.prototype.updateMaze = function() {
     let chatOptions = tile.featureList
       .filter(f => f instanceof pm.ChatFeature)
       .map(function(cf) {
-        let promptOption = pm.getOption(cf, pm.option.PROMPT);
+        let promptOption = maze.getOption(cf, pm.option.PROMPT);
         let text = tile.name;
 
         if (promptOption !== undefined)
@@ -990,7 +1131,10 @@ pm.Maze.prototype.runCommand = function(c) {
   }
 }
 
-pm.Maze.prototype.checkSwitch = function(switchToCheck) {
+pm.Maze.prototype.checkSwitch = function(switchToCheck, def=true) {
+  if (switchToCheck === undefined || switchToCheck === null)
+    return def;
+
   let switchActual = this.switches.find(s => s.name == switchToCheck.name);
   return switchActual.value == switchToCheck.value;
 };
@@ -1087,9 +1231,7 @@ pm.Player.prototype.stepBack = function(smooth) {
   let [x, y] = pm.offsetPoint(
     this.x, this.y, pm.flipDir(this.dir));
 
-  if (this.map.checkForWall(x, y)) {
-    log("wall"); // todo bump anim
-  } else {
+  if (!this.map.checkForWall(x, y)) {
     this.maze.ui.clear();
     this.maze.state = pm.state.MOVING;
 
@@ -1243,10 +1385,8 @@ pm.UI.prototype.showTopics = function(cf) {
     if (this.maze.player.topics.indexOf(topic.name) == -1)
       return null;
 
-    if (topic.switch != null &&
-        !this.maze.checkSwitch(topic.switch)) {
+    if (!this.maze.checkSwitch(topic.switch, true))
       return null;
-    }
 
     text = topic.name;
     onclick = () => ui.sequence(topic.text, () => ui.chat(cf));
@@ -1377,38 +1517,79 @@ pm.parser = function() {
       ["y", P.digits]
     ).map(t => [Number(t.x), Number(t.y)]),
 
-    // ex. "x 1/5 y 1 z -7"
-    // ex. "x 5 y 0 z 0"
-    vector: (r) => P.seqObj(
-      pm.word("x"),
+    // ex. "xyz 1/5 1 -7"
+    // ex. "xy 5 1"
+    // ex. "z 1"
+    // ex. "zyx 3 2 1"
+
+    // test: testParseVector
+    vectorPiece: (r) => P.seqMap(
+      P.alt(
+        pm.word("up").result({x: 0, y: 1, z: 0}),
+        pm.word("down").result({x: 0, y: -1, z: 0}),
+        pm.word("left").result({x: -1, y: 0, z: 0}),
+        pm.word("right").result({x: 1, y: 0, z: 0}),
+        pm.word("forward").result({x: 0, y: 0, z: -1}),
+        pm.word("back").result({x: 0, y: 0, z: 1})
+      ),
       r.__,
-      ["x", r.fraction],
-      r.__,
-      pm.word("y"),
-      r.__,
-      ["y", r.fraction],
-      r.__,
-      pm.word("z"),
-      r.__,
-      ["z", r.fraction]
+      r.number, 
+      function(dir, s, num) {
+        return {
+          x: dir.x * num,
+          y: dir.y * num,
+          z: dir.z * num
+        };
+      }
     ),
 
-    // todo: 
-    //   "1/2 minus 1/8 plus 1/15"
+    vector: (r) => r.vectorPiece.sepBy1(r.__)
+      .map(function(pieces) {
+        let sum = {x: 0, y: 0, z: 0};
+        for (let p of pieces) {
+          sum.x += p.x;
+          sum.y += p.y;
+          sum.z += p.z;
+        }
+        return sum;
+      }).desc("vector"),
+
+    // a number can be:
+    // - a constant 
+    // - a dance name
+    // - a random number generator
+    // - an expression combining those
+    //
+    // constants are expressed as whole numbers or fractions
+    //
+    // dance names are just strings, which at runtime are connected to tweens
+    //
+    // rngs are dice rolls, ranges, random walk? shuffled set of values?
+
+    numberSign: (r) =>  P.string("-").result(-1).fallback(1),
+    integer: (r) => P.seqMap(
+      r.numberSign,
+      P.digits,
+      (sign, digits) => sign * Number(digits))
+    .desc("integer"),
+      
     fraction: (r) => P.seqObj(
-      ["sign", P.alt(P.string("-"), P.string("+")).fallback("+")],
-      ["numerator", P.digits],
-      ["denominator", P.seq(
-        r._,
-        P.string("/"),
-        r._)
-        .then(P.digits)
-        .fallback("1")]
-    ).map(x => Number(x.numerator) / Number(x.denominator) * (x.sign == "-" ? -1 : 1)),
+      ["sign", r.numberSign],
+      ["numerator", r.integer],
+      P.string("/"),
+      ["denominator", r.integer]
+    ).map(x => x.sign * x.numerator/x.denominator)
+    .desc("fraction"),
+
+    number: (r) => P.alt(
+      r.fraction,
+      r.integer
+    ),
 
     // todo -- other types of quantity:
     //         1d6+4, dice roll
     //         5-11, range
+    // todo how does this relate to number above?
     quantity: (r) => P.digits.map(Number),
 
     tileSymbol: () => P.regexp(/[^\n\r]/).desc("tileSymbol"),
@@ -1529,28 +1710,43 @@ pm.parser = function() {
     scaleOption: (r) => P.seqObj(
       pm.wordList(r, "with scale"),
       r.__,
-      ["scale", r.fraction],
+      ["scale", r.number],
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.SCALE})), 
 
+    // testParseNudgeOption
     nudgeOption: (r) => P.seqObj(
       pm.wordList(r, "with nudge"),
       r.__,
       ["vector", r.vector],
       ["switch", r.optWhenSwitch]
-    ).map(n => Object.assign(x, {type: pm.option.NUDGE})),
+    ).map(x => Object.assign(x, {type: pm.option.NUDGE})),
+
+    nameOption: (r) => P.seqObj(
+      pm.wordList(r, "with name"),
+      r.__,
+      ["name", r.quotedString],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.NAME})),
+
+    anchorOption: (r) => P.seqObj(
+      pm.wordList(r, "with anchor"),
+      r.__,
+      ["name", r.quotedString],
+      ["switch", r.optWhenSwitch]
+    ).map(x => Object.assign(x, {type: pm.option.ANCHOR})),
 
     intensityOption: (r) => P.seqObj(
       pm.wordList(r, "with intensity"),
       r.__,
-      ["intensity", r.fraction],
+      ["intensity", r.number],
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.INTENSITY})),
 
     distanceOption: (r) => P.seqObj(
       pm.wordList(r, "with distance"),
       r.__,
-      ["distance", r.fraction],
+      ["distance", r.number],
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.DISTANCE})),
 
@@ -1597,7 +1793,16 @@ pm.parser = function() {
       r.colorOption,
       r.patternOption,
       r.scaleOption,
-      r.nudgeOption),
+      r.nudgeOption,
+      r.nameOption,
+      r.anchorOption),
+
+    anchorOption: (r) => P.alt(
+      r.scaleOption,
+      r.anchorOption,
+      r.nameOption,
+      r.nudgeOption
+    ),
 
     geometryName: (r) => P.alt(
       pm.word("box").result(pm.meshes.BOX),
@@ -1646,6 +1851,12 @@ pm.parser = function() {
       ["options", optionParser(r, r.meshOption)]
     ).map(x => new pm.MeshFeature(x.geometry, x.switch, x.options)),
 
+    anchorFeature: (r) => P.seqObj(
+      pm.word("anchor"),
+      ["switch", r.optWhenSwitch],
+      ["options", optionParser(r, r.anchorOption)]
+    ).map(x => new pm.AnchorFeature(x.switch, x.options)),
+
     wallFeature: (r) => P.seqObj(
       pm.word("wall"),
       ["switch", r.optWhenSwitch],
@@ -1658,13 +1869,15 @@ pm.parser = function() {
         r.itemFeature,
         r.lightFeature,
         r.wallFeature,
+        r.anchorFeature
       )),
 
     // test: testParseFeatureList
     featureList: (r) => 
       r.feature.sepBy1(r.and),
 
-    optWhenSwitch: (r) => r.__.then(r.whenSwitch).fallback(null),
+    optWhenSwitch: (r) => //r.__.then(r.whenSwitch).fallback(null).desc("opt when switch"),
+      P.seqMap(r.__, r.whenSwitch, (x,y) => y).fallback(null),
 
     // test: testParseWhenSwitch
     whenSwitch: (r) => P.seqObj(
@@ -1952,6 +2165,20 @@ pm.parser = function() {
         eq(v.switch.value, "on");
       },
 
+      "testParseNudgeOption": function() {
+        let code = 'with nudge left 1/2';
+        let p = pm.parser().nudgeOption;
+        let v = p.tryParse(code);
+
+        eq(v.vector.x, -0.5);
+        eq(v.vector.y, 0);
+        eq(v.vector.z, 0);
+
+        code = 'with nudge up 1 when switch "min" is "on"';
+        v = p.tryParse(code);
+        eq(v.vector.y, 1);
+      },
+
       "testParseWhenSwitch": function() {
         let code = `when switch "a" is "on"`;
         let p = pm.parser().whenSwitch;
@@ -2016,6 +2243,27 @@ pm.parser = function() {
         let v = p.tryParse("this is words");
         eq(v.length, 3);
         eq(v[1], "is");
+      },
+
+      "testParseVector": function() {
+        let p = pm.parser().vector;
+        let v = p.tryParse("right 1 up 2 back 3");
+
+        eq(v.x, 1);
+        eq(v.y, 2);
+        eq(v.z, 3);
+
+        v = p.tryParse("right 1/2");
+        eq(v.x, 0.5);
+
+        v = p.tryParse("right -1/2");
+        eq(v.x, -0.5);
+
+        v = p.tryParse("down -1/2");
+        eq(v.y, 0.5);
+
+        v = p.tryParse("up 1 up 1 up 1");
+        eq(v.y, 3);
       }
     });
   };
