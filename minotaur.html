@@ -127,6 +127,7 @@ about "minotaur"
     with scale 1/8 when switch "minotaur wall" is "off"
     with color #2781ba
     with pattern "thick stripes" 2x1
+    with nudge up dance "wiggle"
 
   and a chat when switch "minotaur wall" is "on"
     with prompt "talk to the minotaur"
@@ -1785,16 +1786,31 @@ pm.parser = function() {
       ["denominator", r.integer]
     ).map(x => x.sign * x.numerator/x.denominator),
 
-    /*
-    dance: (r) => P.seq(
+    dance: (r) => P.seqObj(
       pm.word("dance"),
-      r.quotedString
-    ),*/
+      r.__,
+      ["name", r.quotedString]
+    ),
+
+    diceOffset: (r) => P.seqObj(
+      ["sign", P.alt(
+        P.string("-").result(-1),
+        P.string("+").result(1))],
+      ["value", P.digits.map(Number)]
+    ).map(x => x.sign * x.value),
+
+    dice: (r) => P.seqObj(
+      ["dice", r.integer],
+      P.string("d"),
+      ["faces", r.integer],
+      ["offset", r.integer.fallback(0)]
+    ),
 
     number: (r) => P.alt(
+      r.dance,
       r.fraction,
-      r.integer
-      //r.dance
+      r.integer,
+      r.dice
     ),
 
     // todo -- other types of quantity:
@@ -2496,6 +2512,17 @@ pm.parser = function() {
 
         v = p.tryParse("up 1 up 1 up 1");
         eq(v.y, 3);
+
+        v = p.tryParse("up dance 'lol'");
+        log(v.y);
+      },
+
+      "testParseNumber": function() {
+        let p = pm.parser().number;
+        let v = p.tryParse("dance 'lol'");
+        log(v);
+
+        //eq(p.tryParse("1", 1));
       }
     });
   };
