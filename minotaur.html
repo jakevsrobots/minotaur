@@ -4,17 +4,16 @@ pet minotaur, version 0.
 
 edit the script below.
 
-todo:
-- anchor feature, just a named transform
-- move name option into feature def like "an anchor named 'feet'"
-- floor elevation
-
-commands todo:
-- draw command, swap tiles?
+event feature, triggering commands when you step on the tile
+- `set M to X` transforms all of these tiles to a new type
+- `swap M and X` transforms all of these tiles to a new type
+- `remove X` remove all of these tiles, eg set X to space
 
 bugs:
 - nested comments don't work, and also if you try to
   comment out a string with a close paren it will break.
+- minotaur has a named anchor and only one can appear at a time; all being
+  anchored to the same point?
 -->
 <html><head><title>pet minotaur</title></head>
 
@@ -29,7 +28,7 @@ bugs:
 
 map named "start"
 ##########################
-#*1    ?          ?   M *#
+#*1M   ?   X      ?     *#
 ##################+#######
                  # #
                  # #
@@ -42,12 +41,13 @@ map named "start"
 #                     #
 #  *         *        #
 #######################
-
 end
 
 key
   1 is for "start"
-
+  
+  X is for "second minotaur point" with
+    a box with color #ff0000 with scale 1/16
 
   (P is for "portrait" with 
     a box
@@ -63,8 +63,6 @@ key
     and a ball
       with scale 1/8
       with color #ff0000)
-
-
 
   # is for "wall" with
       a wall 
@@ -83,24 +81,34 @@ key
         with distance 5
         with color #FF0000
         with intensity 2
-  + is for "door" with 
-        a box when switch "door" is "closed"
-          with color #aa0088 
-          with pattern "thin grid" 1x8
-        and a wall when switch "door" is "closed"
-        and a ball when switch "door" is "closed"
-          with pattern "thick grid" 1x1
-          with scale 1/8
-          with nudge left 1/2
-        and a chat with prompt "door"
-          with topic "open the door"
-                     switch "door" to "open"
-                     gain topic "close the door"
-                     lose topic "open the door"
-          with topic "close the door"
-                     switch "door" to "closed"
-                     gain topic "open the door"
-                     lose topic "close the door"
+
+  + is for "door"
+
+  % is for "weird wall" with
+    a box with color #00ff00
+          with scale 1/3
+end
+
+about "door"
+  a box when switch "door" is "closed"
+    with color #aa0088 
+    with pattern "thin grid" 1x8
+  and a wall 
+    when switch "door" is "closed"
+  and a ball 
+    when switch "door" is "closed"
+    with pattern "thick grid" 1x1
+    with scale 1/8
+    with nudge left 1/2
+  and a chat with prompt "door"
+    with topic "open the door"
+               switch "door" to "open"
+               gain topic "close the door"
+               lose topic "open the door"
+    with topic "close the door"
+               switch "door" to "closed"
+               gain topic "open the door"
+               lose topic "close the door"
 end
 
 about "minotaur"
@@ -143,13 +151,20 @@ about "minotaur"
                "sorry am i in your way"
                "excuse me"
                switch "minotaur wall" to "off"
+               bye
     with topic "pass" when switch "minotaur mood" is "irritable"
                "sorry am i in your way"
                "you could have said something"
                switch "minotaur wall" to "off"
+               bye
+    with topic "swap"
+               swap M and X
+               set # to %
+               bye
 end
 
 starting topics
+  "swap"
   "pass"
   "the beach"
   "fur"
@@ -402,11 +417,14 @@ pm.state = {
 };
 
 pm.command = {
+  BYE: Symbol("bye"),
   GAIN_TOPIC: Symbol("gain topic"),
   LOSE_TOPIC: Symbol("lose topic"),
   GAIN_ITEM: Symbol("gain item"),
   LOSE_ITEM: Symbol("lose item"),
   SAY: Symbol("say"),
+  SET: Symbol("set"),
+  SWAP: Symbol("swap"),
   SWITCH: Symbol("switch")
 };
 
@@ -603,16 +621,59 @@ pm.Map.prototype.build = function() {
 
 pm.Map.prototype.addTile = function(tileSymbol, x, y) {
   let tileName = this.maze.key[tileSymbol];
-  let tileDef = this.maze.tiles.find(x => x.name == tileName);
+  let tileDef = this.maze.tiles.find(t => t.name == tileName);
 
+  if (tileDef === undefined)
+    log(tileDef, tileName, tileSymbol);
   let tile = new pm.Tile(
     tileSymbol, tileName, x, y, tileDef.features, this);
   this.live.push(tile);
   return tile;
 };
 
+pm.Map.prototype.removeTile = function(tile) {
+  let i = this.live.indexOf(tile);
+  this.live.splice(i,1);
+  tile.destroy();
+};
+
 pm.Map.prototype.getTile = function(x, y) {
   return this.live.find(t => t.x==x && t.y==y);
+};
+
+pm.Map.prototype.swapTiles = function(tile1, tile2) {
+  let firstSet = this.live.filter(t => t.tileSymbol == tile1);
+  let secondSet = this.live.filter(t => t.tileSymbol == tile2);
+
+  let newTiles = [];
+  for (let t of firstSet) {
+    newTiles.push([tile2, t.x, t.y]);
+    this.removeTile(t);
+    t.destroy();
+  }
+
+  for (let t of secondSet) {
+    newTiles.push([tile1, t.x, t.y]);
+    this.removeTile(t);
+    t.destroy();
+  }
+
+  for (let n of newTiles) {
+    let t = this.addTile(n[0], n[1], n[2]);
+    t.build();
+  }
+};
+
+pm.Map.prototype.setTiles = function(tile1, tile2) {
+  let firstSet = this.live.filter(t => t.tileSymbol == tile1);
+
+  for (let t of firstSet) {
+    let x = t.x;
+    let y = t.y;
+    t.destroy();
+    this.removeTile(t);
+    this.addTile(tile2, x, y);
+  }
 };
 
 // --------------------------------------------------------------
@@ -716,8 +777,12 @@ pm.MeshFeature.prototype.build = function(tile) {
 pm.MeshFeature.prototype.destroy = function() {
   this.tile.root.remove(this.mesh);
   this.mesh = null;
-  this.mat.dispose();
-  this.bufGeo.dispose();
+
+  if (this.mat)
+    this.mat.dispose();
+
+  if (this.mat)
+    this.bufGeo.dispose();
   this.mat = this.bufGeo = null;
 };
 
@@ -923,6 +988,7 @@ pm.WallFeature.prototype.updateSwitchedOptions = function() {
 // #tile -- obj representing a tile at runtime
 // --------------------------------------------------------------
 pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
+  this.tileSymbol = tileSymbol;
   this.x = x;
   this.y = y;
   this.featureList = featureList;
@@ -960,6 +1026,12 @@ pm.Tile.prototype.build = function() {
     f();
 
   this.q.length = 0;
+};
+
+pm.Tile.prototype.destroy = function() {
+  for (let f of this.featureList)
+    f.destroy();
+  this.map.root.remove(this.root);
 };
 
 pm.Tile.prototype.setObjectAnchorByName = function(childObject, parentName) {
@@ -1248,6 +1320,17 @@ pm.Maze.prototype.runCommand = function(c) {
 
       this.switchUpdate(sw);
 
+      break;
+    case pm.command.BYE:
+      // TODO break out of chat
+      break;
+    case pm.command.SET:
+      // TODO set a tile
+      this.currentMap.setTiles(c.tile1, c.tile2);
+      break;
+    case pm.command.SWAP:
+      this.currentMap.swapTiles(c.tile1, c.tile2);
+      // TODO swap two tiles
       break;
   }
 }
@@ -1720,7 +1803,7 @@ pm.parser = function() {
     // todo how does this relate to number above?
     quantity: (r) => P.digits.map(Number),
 
-    tileSymbol: () => P.regexp(/[^\n\r]/).desc("tileSymbol"),
+    tileSymbol: () => P.regexp(/[^\s]/).desc("tileSymbol"),
 
     comment: (r) => P.string("(").desc("open comment")
       .then(P.takeWhile(c => c != ")").desc("comment body"))
@@ -2155,13 +2238,41 @@ pm.parser = function() {
       ["topic", r.quotedString]
     ).map(x => Object.assign(x, {type: pm.command.SAY})),
 
+    commandBye: (r) => pm.word("bye")
+      .result({type: pm.command.BYE}),
+
+    //  set M to X
+    commandSet: (r) => P.seqObj(
+      pm.word("set"),
+      r.__,
+      ["from", r.tileSymbol],
+      r.__,
+      pm.word("to"),
+      r.__,
+      ["to", r.tileSymbol]
+    ).map(x => Object.assign(x, {type: pm.command.SET})),
+
+    //  swap M and X
+    commandSwap: (r) => P.seqObj(
+      pm.word("swap"),
+      r.__,
+      ["tile1", r.tileSymbol],
+      r.__,
+      pm.word("and"),
+      r.__,
+      ["tile2", r.tileSymbol]
+    ).map(x => Object.assign(x, {type: pm.command.SWAP})),
+
     command: (r) => P.alt(
       r.commandGainTopic,
       r.commandLoseTopic,
       r.commandGainItem,
       r.commandLoseItem,
       r.commandSwitch,
-      r.commandSay
+      r.commandBye,
+      r.commandSay,
+      r.commandSet,
+      r.commandSwap
     ),
 
     useItemBlock: (r) => P.seqObj(
