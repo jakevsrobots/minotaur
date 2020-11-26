@@ -443,6 +443,7 @@ pm.NORMAL_ANIM_TIME = 250;
 // --------------------------------------------------------------
 // #util -- helpers
 // --------------------------------------------------------------
+
 pm.offsetPoint = function(x, y, dir) {
   switch (dir) {
     case pm.dir.NORTH:
@@ -552,7 +553,8 @@ pm.createImageTexture = function(name) {
 pm.word = function(s) {
   return Parsimmon
     .regexp(new RegExp("\\b" + s + "\\b", "i"))
-    .desc("word '" + s + "'");
+    .desc("word '" + s + "'")
+    .result(s.toLowerCase());
 };
 
 // test: testParseWordList
@@ -2319,6 +2321,32 @@ pm.parser = function() {
       r.__,
       r.endBlock
     ).node("switchesBlock"),
+
+/*(dance named "wiggle"
+  up 1/4 for 1 step
+  wait for 2 steps
+  down 1/4 for 1 step
+  wait for 2 steps 
+    end)*/
+
+    danceMove: (r) => P.seqObj(
+      ["move", P.alt(r.vector, 
+        pm.word("wait"))],
+      r.__,
+      pm.word("for"),
+      r.__,
+      ["duration", r.number],
+      r.__,
+      P.alt(pm.word("steps"), pm.word("step"))
+    ),
+
+    danceBlock: (r) => P.seqObj(
+      pm.wordList("dance named"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      ["moves", r.danceMove.sepBy(r.__)],
+    ).node("danceBlock"),
 
     // test: testParseMaze
     maze: (r) => P.alt(
