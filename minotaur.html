@@ -32,9 +32,9 @@ end
 
 dance named "nod"
   pose "sky" for 15/16 beat
-  to pose "feet" in 1/16 beat
+  to "feet" in 1/16 beat
   pose "feet" for 15/16 beat
-  to pose "sky" for 1/16 beat
+  to "sky" for 1/16 beat
   loop forever
 end
 
@@ -45,7 +45,7 @@ dance named "bounce"
   to "feet" in 1/4 beat
   to "sky" in 1/8 beat
   to "feet" in 1/16 beat
-  back and forth forever
+  loop back and forth forever
 end
 
 these are absolute turns and positions in local space for the obj, with a lerp
@@ -170,7 +170,6 @@ about "minotaur"
     (with scale 1/8 when switch "minotaur wall" is "off")
     with color #2781ba
     with pattern "thick stripes" 2x1
-    with nudge up dance "saw"
 
   and a chat when switch "minotaur wall" is "on"
     with prompt "talk to the minotaur"
@@ -221,18 +220,33 @@ switches
   "door" can be "closed" or "open"
 end
 
-dance named "wiggle"
-  up 1/4 for 1 beat
-  rest for 2 beats
-  down 1/4 for 1 beat
-  rest for 2 beats
+pose named "look at the sky"
+  ("head" is a named anchor or 3d shape)
+  nudge "head" up 1/16
+  turn "head" up 1/2
 end
 
-dance named "saw"
-  up 1 for 4 beats
-  down 1 for 1 beat
-  up 1 for 4 beats
-  down 1 for 1 beat
+pose named "look at your feet"
+  nudge "head" down 1/16
+  turn "head" down 1/2
+end
+
+dance named "nod"
+  pose "look at the sky" for 15/16 beat
+  to "look at your feet" in 1/16 beat
+  pose "look at your feet" for 15/16 beat
+  to "look at the sky" for 1/16 beat
+  loop forever
+end
+
+dance named "bounce"
+  pose "look at the sky" for 1 beat
+  to "look at your feet" in 1 beat
+  to "look at the sky" in 1/2 beat
+  to "look at your feet" in 1/4 beat
+  to "look at the sky" in 1/8 beat
+  to "look at your feet" in 1/16 beat
+  loop back and forth forever
 end
 
 to use "loupe" with "minotaur"
@@ -485,7 +499,6 @@ pm.mesh = {
 };
 
 pm.number = {
-  DANCE: Symbol("dance number"),
   DICE: Symbol("dice number")
 };
 
@@ -654,6 +667,26 @@ pm.wordList = function(r, s) {
       parsers.push(r.__.then(pm.word(w)));
   }
   return Parsimmon.seq(...parsers);
+};
+
+// nudge:
+/*
+        pm.word("up").result({x: 0, y: 1, z: 0}),
+        pm.word("down").result({x: 0, y: -1, z: 0}),
+        pm.word("left").result({x: -1, y: 0, z: 0}),
+        pm.word("right").result({x: 1, y: 0, z: 0}),
+        pm.word("forward").result({x: 0, y: 0, z: -1}),
+        pm.word("back").result({x: 0, y: 0, z: 1})
+*/
+// turn:
+//   left: y-1
+//   right: y+1
+//   up: x-1
+//   down: x+1
+//   tilt left: z+1
+//   tilt right: z-1
+pm.nudgeToTurnVector = function(vec) {
+
 };
 
 // --------------------------------------------------------------
@@ -1078,6 +1111,38 @@ pm.WallFeature.prototype.updateSwitchedOptions = function() {
   // no-op, wall has no options
 };
 
+// Dance
+pm.DanceFeature = function(danceName, sw) {
+  this.danceName = danceName;
+  this.switch = sw;
+  this.tween = null;
+};
+
+pm.DanceFeature.prototype.build = function(tile) {
+  // todo create the tween and bind it to the tile's properties, then save a
+  // reference to it for destroy()
+  // keep a reference to this object so 'enabled' can be polled from the
+  // tween's onUpdate; it will be switched off when the dance is changed by a
+  // switch, and the tween onUpdate should check this flag before applying its change
+  this.tween = // todo, see startDance. this should replace that.
+  this.tween.start();
+};
+
+pm.DanceFeature.prototype.destroy = function() {
+  // stop the tween
+};
+
+pm.DanceFeature.prototype.switchOn = function() {
+  this.enabled = true;
+};
+
+pm.DanceFeature.prototype.switchOff = function() {
+  this.enabled = false;
+};
+
+pm.WallFeature.prototype.updateSwitchedOptions = function() {
+  // no-op, wall has no options
+};
 // --------------------------------------------------------------
 // #tile -- obj representing a tile at runtime
 // --------------------------------------------------------------
@@ -1154,6 +1219,7 @@ pm.Tile.prototype.setObjectAnchorByName = function(childObject, parentName) {
   else
     f();
 };
+
 
 // --------------------------------------------------------------
 // #maze -- the main runtime class
@@ -1935,6 +2001,29 @@ pm.parser = function() {
     // ex. "left 1/2 up 1"
     // ex. "back 2 up 3 down 3 forward 2"
 
+    resizeVectorPiece: (r) => P.seqObj(
+      ["dimension", P.alt(
+        pm.word("width").result("x"),
+        pm.word("height").result("y"),
+        pm.word("depth").result("z"))],
+      r.__,
+      ["magnitude", r.number]),
+
+    resizeVector: (r) => r.resizeVectorPiece.sepBy1(r.__),
+
+    turnVectorPiece: (r) => P.seqObj(
+      ["angle", P.alt(
+        pm.word("up").result({x: -1, y: 0, z: 0}),
+        pm.word("down").result({x: 1, y: 0, z: 0}),
+        pm.word("left tilt").result({x: 0, y: 0, z: -1}),
+        pm.word("right tilt").result({x: 0, y: 0, z: 1}),
+        pm.word("left").result({x: 0, y: -1, z: 0}),
+        pm.word("right").result({x: 1, y: 1, z: 0}))],
+      r.__,
+      ["magnitude", r.number]),
+
+    turnVector: (r) => r.turnVectorPiece.sepBy1(r.__),
+
     // test: testParseVector
     vectorPiece: (r) => P.seqObj(
       ["dir", P.alt(
@@ -1987,12 +2076,6 @@ pm.parser = function() {
       ["denominator", r.integer]
     ).map(x => x.sign * x.numerator/x.denominator),
 
-    dance: (r) => P.seqObj(
-      pm.word("dance"),
-      r.__,
-      ["name", r.quotedString]
-    ).map((x) => Object.assign(x, {type: pm.number.DANCE})),
-
     diceOffset: (r) => P.seqObj(
       ["sign", P.alt(
         P.string("-").result(-1),
@@ -2008,7 +2091,6 @@ pm.parser = function() {
     ).map(x => Object.assign(x, {type: pm.number.DICE})),
 
     number: (r) => P.alt(
-      r.dance,
       r.fraction,
       r.integer,
       r.dice
@@ -2019,6 +2101,25 @@ pm.parser = function() {
     //         5-11, range
     // todo how does this relate to number above?
     quantity: (r) => P.digits.map(Number),
+
+    // transformations
+    //   nudge == translate
+    //   turn == rotate
+    //   resize == scale
+    nudge: (r) => P.seqObj(
+      pm.word("nudge"),
+      r.__,
+      ["vector", r.vector]),
+
+    turn: (r) => P.seqObj(
+      pm.word("turn"),
+      r.__,
+      ["vector", r.turnVector]),
+
+    resize: (r) => P.seqObj(
+      pm.word("resize"),
+      r.__,
+      ["vector", r.resizeVector]),
 
     tileSymbol: () => P.regexp(/[^\s]/).desc("tileSymbol"),
 
@@ -2524,22 +2625,37 @@ pm.parser = function() {
     beatDuration: (r) => P.seqObj(
       pm.word("for"),
       r.__,
-      ["num", r.integer],
+      ["num", r.fraction],
       r.__,
       P.alt(pm.word("beats"), pm.word("beat"))
     ).map(x => x.num),
 
-    danceMoveDuration: (r) => 
-      P.alt(
-        r.beatDuration,
-        pm.word("immediately").result(0)
-      ),
-
-    danceMove: (r) => P.seqObj(
-      ["move", P.alt(r.relativeConstantNumber, 
-        pm.word("rest"))],
+    pose: (r) => P.seqObj(
+      pm.word("pose"),
       r.__,
-      ["duration", r.danceMoveDuration]
+      ["name", r.quotedString],
+      r.__,
+      pm.word("for"),
+      r.__,
+      ["duration", r.number],
+      r.__,
+      P.alt(pm.word("beats"), pm.word("beat"))
+    ),
+
+    poseTransition: (r) => P.seqObj(
+      pm.wordList(r, "to pose"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      pm.word("in"),
+      r.__,
+      ["duration", r.number],
+      r.__,
+      P.alt(pm.word("beats"), pm.word("beat"))
+    ).map(x => Object.assign(x, {transition: true})),
+
+    poseOrTransition: (r) => P.alt(
+      r.pose, r.poseTransition
     ),
 
     danceBlock: (r) => P.seqObj(
@@ -2547,10 +2663,24 @@ pm.parser = function() {
       r.__,
       ["name", r.quotedString],
       r.__,
-      ["moves", r.danceMove.sepBy(r.__)],
+      ["steps", r.poseOrTransition.sepBy(r.__)],
       r.__,
       r.endBlock
     ).node("danceBlock"),
+
+    posePiece: (r) => P.seqObj(
+      P.alt(pm.word("nudge"))
+    ),
+
+    poseBlock: (r) => P.seqObj(
+      pm.wordList(r, "pose named"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      ["pieces", r.posePiece.sepBy(r.__)],
+      r.__,
+      r.endBlock
+    ).node("poseBlock"),
 
     // test: testParseMaze
     maze: (r) => P.alt(
@@ -2562,6 +2692,7 @@ pm.parser = function() {
       r.startingTopicsBlock,
       r.switchesBlock,
       r.useItemBlock,
+      r.poseBlock,
       r.danceBlock
     ).sepBy1(r.__).trim(r._).skip(P.end)
   });
@@ -2749,17 +2880,10 @@ pm.parser = function() {
 
         v = pm.flattenVec(p.tryParse("up 1 up 1 up 1"));
         eq(v.y, 3);
-
-        try {
-          v = pm.flattenVec(p.tryParse("up dance 'lol'"));
-        } catch (err) {
-          eq(err, "Can't flatten a vector with this non-number magnitude: [object Object]");
-        }
       },
 
       "testParseNumber": function() {
         let p = pm.parser().number;
-        let v = p.tryParse("dance 'lol'");
 
         //eq(p.tryParse("1", 1));
       }
