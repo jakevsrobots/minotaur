@@ -35,11 +35,11 @@ dance named "nod"
   to "feet" in 1/16 beat
   pose "feet" for 15/16 beat
   to "sky" for 1/16 beat
-  loop forever
+  loop
 end
 
 dance named "bounce"
-  "sky" for 1 beat
+  pose "sky" for 1 beat
   to "feet" in 1 beat
   to "sky" in 1/2 beat
   to "feet" in 1/4 beat
@@ -64,160 +64,29 @@ duration specified in beats. could also include colors.
 )
 
 map named "start"
-##########################
-#*1M   ?   X      ?     *#
-##################+#######
-                 # #
-                 # #
-                 # #
-                 # #
-                 #*#
-                 # #
-################## ####
-#       *             #
-#                     #
-#  *         *        #
-#######################
+######
+#*1M #
+######
 end
 
 key
   1 is for "start"
   
-  X is for "second minotaur point" with
-    a box with color #ff0000 with scale 1/16
-
-  (P is for "portrait" with 
-    a box
-      with image "karl"
-    and a ball
-      with scale 1/8
-      with color #ff0000
-      with nudge up 1/14 left 1/14
-    and a ball
-      with scale 1/8
-      with color #ff0000
-      with nudge up 1/14 right 1/14
-    and a ball
-      with scale 1/8
-      with color #ff0000)
-
   # is for "wall" with
       a wall 
       and a box 
         with color #efc5ca
         with pattern "zags" 2x1
   M is for "minotaur"
-  ? is for "light" with
-      a point light
-        with distance 3
-        with color #ffffff
-        with intensity 1
-
-  * is for "lamp" with 
-      a point light 
-        with distance 5
-        with color #FF0000
-        with intensity 2
-
-  + is for "door"
-
-  % is for "weird wall" with
-    a box with color #00ff00
-          with scale 1/3
-end
-
-about "door"
-  a box when switch "door" is "closed"
-    with color #aa0088 
-    with pattern "thin grid" 1x8
-  and a wall 
-    when switch "door" is "closed"
-  and a ball 
-    when switch "door" is "closed"
-    with pattern "thick grid" 1x1
-    with scale 1/8
-    with nudge left 1/2
-  and a chat with prompt "door"
-    with topic "open the door"
-               switch "door" to "open"
-               gain topic "close the door"
-               lose topic "open the door"
-    with topic "close the door"
-               switch "door" to "closed"
-               gain topic "open the door"
-               lose topic "close the door"
 end
 
 about "minotaur"
-  a wall when switch "minotaur wall" is "on"
+  a dance "nod" 
 
-  and a dance "nod" 
-    when switch "minotaur mood" is "chill"
+  and a ball named "head"
+    with size 1/4
+    with nudge up 1/3
 
-  and a dance "bounce" 
-    when switch "minotaur mood" is "irritated"
-
-  and an anchor
-    with name "feet"
-    with nudge left 1/2
-      when switch "minotaur wall" is "off"
-
-  and a ball
-    with scale 1/2
-    (with turn right 1/4)
-    with name "head"
-    with anchor "feet"
-    (with scale 1/8 when switch "minotaur wall" is "off")
-    with color #2781ba
-    with pattern "thick stripes" 2x1
-
-  and a chat when switch "minotaur wall" is "on"
-    with prompt "talk to the minotaur"
-    with greeting "hi!" 
-      when switch "minotaur mood" is "chill"
-    with greeting "it's you" 
-      when switch "minotaur mood" is "irritable"
-    with topic "the beach"
-               "no i haven't been to the beach lately"
-               "i basically never leave the maze lol"
-    with topic "fur"
-               "sure, take a closer look"
-               gain topic "fleas"
-               "pretty nice right?"
-    with topic "fleas"
-               "oh you noticed"
-               "cool"
-               lose topic "fleas"
-               lose topic "fur"
-               switch "minotaur mood" to "irritable"
-    with topic "pass" when switch "minotaur mood" is "chill"
-               "sorry am i in your way"
-               "excuse me"
-               switch "minotaur wall" to "off"
-               bye
-    with topic "pass" when switch "minotaur mood" is "irritable"
-               "sorry am i in your way"
-               "you could have said something"
-               switch "minotaur wall" to "off"
-               bye
-    with topic "swap"
-               swap M and X
-               set # to %
-               bye
-end
-
-starting topics
-  "swap"
-  "pass"
-  "the beach"
-  "fur"
-  "open the door"
-end
-
-switches
-  "minotaur wall" can be "on" or "off"
-  "minotaur mood" can be "chill" or "irritable"
-  "door" can be "closed" or "open"
 end
 
 pose named "look at the sky"
@@ -233,20 +102,20 @@ end
 
 dance named "nod"
   pose "look at the sky" for 15/16 beat
-  to "look at your feet" in 1/16 beat
+  to "look at your feet" for 1/16 beat
   pose "look at your feet" for 15/16 beat
   to "look at the sky" for 1/16 beat
-  loop forever
+  loop
 end
 
 dance named "bounce"
   pose "look at the sky" for 1 beat
-  to "look at your feet" in 1 beat
-  to "look at the sky" in 1/2 beat
-  to "look at your feet" in 1/4 beat
-  to "look at the sky" in 1/8 beat
-  to "look at your feet" in 1/16 beat
-  loop back and forth forever
+  to "look at your feet" for 1 beat
+  to "look at the sky" for 1/2 beat
+  to "look at your feet" for 1/4 beat
+  to "look at the sky" for 1/8 beat
+  to "look at your feet" for 1/16 beat
+  back and forth forever
 end
 
 to use "loupe" with "minotaur"
@@ -454,8 +323,8 @@ pm.option = {
   NUDGE: Symbol("nudge"),
   PATTERN: Symbol("pattern"),
   PROMPT: Symbol("prompt"),
-  SCALE: Symbol("scale"),
   SECONDARY_COLOR: Symbol("secondary color"),
+  SIZE: Symbol("size"),
   SWITCH: Symbol("switch"),
   TOPIC: Symbol("topic"),
   TURN: Symbol("turn")
@@ -861,23 +730,17 @@ pm.MeshFeature.prototype.build = function(tile) {
   this.mat = new THREE.MeshLambertMaterial(matOptions);
   this.mesh = new THREE.Mesh(this.bufGeo, this.mat);
 
-  // scale
-  let scale = maze.getOption(this, pm.option.SCALE);
-  if (scale !== undefined)
-    this.mesh.scale.set(scale.scale, scale.scale, scale.scale);
+  // size
+  let size = maze.getOption(this, pm.option.SIZE);
+  if (size !== undefined)
+    this.mesh.scale.set(size.x, size.y, size.z);
 
   // nudge
   let nudge = maze.getOption(this, pm.option.NUDGE);
   let mesh = this.mesh;
   if (nudge !== undefined) {
-    log("nudge", nudge);
-    maze.addVectorListener(function(axisName, mag) {
-      mesh.position.setComponent("xyz".indexOf(axisName), mag);
-    }, nudge.vector);
-    /*
     this.mesh.position.set(
       nudge.vector.x, nudge.vector.y, nudge.vector.z);
-      */
   }
 
   // turn
@@ -937,10 +800,10 @@ pm.AnchorFeature.prototype.build = function(tile) {
   this.tile.root.add(this.root);
   let maze = tile.map.maze;
 
-  // scale
-  let scale = maze.getOption(this, pm.option.SCALE);
-  if (scale !== undefined)
-    this.root.scale.set(scale.scale, scale.scale, scale.scale);
+  // size
+  let size = maze.getOption(this, pm.option.SIZE);
+  if (size !== undefined)
+    this.root.scale.set(size.x, size.y, size.z);
 
   // nudge
   let nudge = maze.getOption(this, pm.option.NUDGE);
@@ -1116,6 +979,8 @@ pm.DanceFeature = function(danceName, sw) {
   this.danceName = danceName;
   this.switch = sw;
   this.tween = null;
+
+  this.data = {};
 };
 
 pm.DanceFeature.prototype.build = function(tile) {
@@ -1124,8 +989,35 @@ pm.DanceFeature.prototype.build = function(tile) {
   // keep a reference to this object so 'enabled' can be polled from the
   // tween's onUpdate; it will be switched off when the dance is changed by a
   // switch, and the tween onUpdate should check this flag before applying its change
-  this.tween = // todo, see startDance. this should replace that.
-  this.tween.start();
+  this.tile = tile;
+  let maze = tile.map.maze; 
+  let danceDef = maze.dances[this.danceName];
+  let dance = this.dance = new pm.Dance(maze, danceDef);
+  let data = this.data = dance.getBlankData();
+
+  // create and chain tweens, store and return the dance object.
+  let tween = this.tween = new TWEEN.Tween(data);
+  let firstStep = danceDef.steps.shift();
+  if (firstStep.transition) {
+    let stepData, duration = dance.getStepData(firstStep);
+    tween.to(stepData, maze.beatsToMs(duration));
+  } else {
+    let stepData, duration = dance.getStepData(firstStep);
+    tween.to(stepData, 0);
+  }
+
+  let lastTween = tween;
+  danceDef.steps.forEach(function(step) {
+    let [poseData, duration] = dance.getStepData(step);
+    let t = new TWEEN.Tween(data)
+      .to(poseData, maze.beatsToMs(duration))
+      .onUpdate(() => tile.applyDanceData(data));
+    lastTween.chain(t);
+    lastTween = t;
+  });
+
+  lastTween.chain(tween);
+  lastTween.start();
 };
 
 pm.DanceFeature.prototype.destroy = function() {
@@ -1143,6 +1035,58 @@ pm.DanceFeature.prototype.switchOff = function() {
 pm.WallFeature.prototype.updateSwitchedOptions = function() {
   // no-op, wall has no options
 };
+
+
+// --------------------------------------------------------------
+// #dance -- obj representing an animation
+// --------------------------------------------------------------
+pm.Dance = function(maze, danceDef) {
+  this.maze = maze;
+  this.steps = danceDef.steps;
+  this.name = danceDef.name;
+};
+
+pm.Dance.prototype.getStepData = function(step) {
+  let data = {};
+
+  let pose = this.maze.poses[step.name];
+  for (let piece of pose.pieces) {
+    let vec = pm.flattenVec(piece.vector);
+
+    for (let axis of "xyz") {
+      let propertyId = `${piece.type}-${piece.name}-${axis}`;
+      if (vec[axis] != 0)
+        data[propertyId] = vec[axis];
+    }
+  }
+
+  return [data, step.duration];
+};
+
+// get an object with all the keys from any poses in this dance
+pm.Dance.prototype.getBlankData = function() {
+  let keys = [];
+
+  for (let step of this.steps) {
+    let pose = this.maze.poses[step.name];
+    for (let piece of pose.pieces) {
+      for (let axis of "xyz") {
+        let propertyId = `${piece.type}-${piece.name}-${axis}`;
+        let vec = piece.vector;
+        if (vec[axis] != 0)
+          keys.push(propertyId);
+      }
+    }
+  }
+
+  let data = {};
+
+  for (let k of keys)
+    data[k] = 0;
+
+  return data;
+};
+
 // --------------------------------------------------------------
 // #tile -- obj representing a tile at runtime
 // --------------------------------------------------------------
@@ -1220,6 +1164,12 @@ pm.Tile.prototype.setObjectAnchorByName = function(childObject, parentName) {
     f();
 };
 
+pm.Tile.prototype.applyDanceData = function(data) {
+  for (let [k,v] of Object.entries(data)) {
+    //log("dance data", k, v);
+    // todo apply values to specified objects
+  }
+};
 
 // --------------------------------------------------------------
 // #maze -- the main runtime class
@@ -1240,7 +1190,7 @@ pm.Maze = function() {
   this.root = new THREE.Object3D();
 
   this.dances = {};
-  this.liveDances = {};
+  this.poses = {};
 };
 
 pm.Maze.prototype.build = function() {
@@ -1292,6 +1242,9 @@ pm.Maze.prototype.build = function() {
           case "danceBlock":
             this.dances[block.name] = block;
             break;
+          case "poseBlock":
+            this.poses[block.name] = block;
+            break;
         }
       }
 
@@ -1328,111 +1281,8 @@ pm.Maze.prototype.getOption = function(feature, optionSymbol) {
                                    this.checkSwitch(x.switch, true));
 };
 
-// you pass a function to be applied to the number value whenever it is ready
-// or changes, ie in a tween's onUpdate or immediately once for a constant.
-// instead of requesting a function to call later.
-//
-// returns a dance reference, or null
-pm.Maze.prototype.addNumberListener = function(listener, num) {
-  if (!isNaN(num)) {
-    listener(num);
-    return null;
-  }
-
-  else if (num.type == pm.number.DICE) {
-    listener(pm.rollDice(num.dice, num.faces));
-    return null;
-  }
-
-  else if (num.type == pm.number.DANCE) {
-    // figure out the specific name of this dance
-    // for now it's just the name, but later there will be 
-    // parameters, for example:
-    // - dance "wiggle" at 1/2 speed
-    // - dance "wiggle" at 2 intensity at 5 speed
-    let danceId = num.name;
-
-    // look up or start the dance.
-    // return a ref to the dance, for management
-    return this.startDance(num, listener);
-  }
-};
-
-// the listener function here is like:
-// function(axisName, value) {
-//   whatever.position[axisName] = value;
-// }
-//
-// returns a dance reference, or null
-pm.Maze.prototype.addVectorListener = function(listener, _pieces) {
-  let maze = this;
-
-  let pieces = _pieces.map(
-    (n) => (n.type == pm.number.DICE) ? 
-      pm.rollDice(n.dice, n.faces) : 
-      n
-  );
-
-  // now everything is either a number or a dance reference
-  // start all the dances and keep references of them for management later
-  let dances = [];
-  for (let p of pieces) {
-    for (let axis of ['x','y','z']) {
-      if (p.dir[axis] != 0) {
-        let n = p.magnitude;
-
-        if (!isNaN(n)) {
-          listener(axis, n);
-        } else if (n.type == pm.number.DANCE) {
-          let singleAxisListener = function(tweenValue) {
-            listener(axis, p.dir[axis] * tweenValue);
-          };
-          let danceDef = maze.dances[n.name];
-          let dance = this.startDance(danceDef, singleAxisListener);
-          dances.push(dance);
-        } 
-      }
-    }
-  }
-
-  return dances;
-};
-
-pm.Maze.prototype.startDance = function(danceDef, listener) {
-  let maze = this;
-  let dance = {name: danceDef.name, value: 0};
-  // create and chain tweens, store and return the dance object.
-  let currentValue = 0;
-  let firstMove = danceDef.moves.shift();
-  let tween = new TWEEN.Tween(dance);
-
-  let tweens = danceDef.moves.map(function(move) {
-    if (move.move != "rest")
-      currentValue += move.move;
-    return new TWEEN.Tween(dance)
-      .to({value: currentValue}, maze.beatsToMs(move.duration))
-      .onUpdate(() => listener(dance.value));
-  });
-
-  if (tweens.length == 0) {
-    log("empty dance", dance, "from def", danceDef);
-    return null;
-  }
-
-  dance.tween = tweens.shift();
-  let last = null;
-  while (tweens.length > 0) {
-    last = tweens.shift();
-    dance.tween.chain(last);
-  }
-
-  last.chain(dance.tween);
-  dance.tween.start();
-
-  return dance;
-};
-
-// you should be able to set and change the tempo; for now it's 120bpm.
+// todo you should be able to set and change the tempo; for now it's 
+// hardcoded to 120bpm.
 pm.Maze.prototype.beatsToMs = function(beats) {
   return beats * 600 / 4;
 };
@@ -1968,6 +1818,8 @@ pm.parser = function() {
             .fallback([])
   };
 
+
+
   let lang = P.createLanguage({
     spaceOrComment: (r) => P.alt(
       P.whitespace,
@@ -1997,22 +1849,24 @@ pm.parser = function() {
       ["y", P.digits]
     ).map(t => [Number(t.x), Number(t.y)]),
 
-    // ex. "up 1/5"
-    // ex. "left 1/2 up 1"
-    // ex. "back 2 up 3 down 3 forward 2"
-
-    resizeVectorPiece: (r) => P.seqObj(
-      ["dimension", P.alt(
+    sizeVectorPiece: (r) => P.seqObj(
+      ["dir", P.alt(
         pm.word("width").result("x"),
         pm.word("height").result("y"),
         pm.word("depth").result("z"))],
       r.__,
       ["magnitude", r.number]),
 
-    resizeVector: (r) => r.resizeVectorPiece.sepBy1(r.__),
+    sizeVectorSingle: (r) => r.number
+      .map((x) => ([{magnitude: x, dir: {x:1, y:1, z:1}}])),
+
+    sizeVector: (r) => P.alt(
+      r.sizeVectorPiece.sepBy1(r.__),
+      r.sizeVectorSingle
+    ),
 
     turnVectorPiece: (r) => P.seqObj(
-      ["angle", P.alt(
+      ["dir", P.alt(
         pm.word("up").result({x: -1, y: 0, z: 0}),
         pm.word("down").result({x: 1, y: 0, z: 0}),
         pm.word("left tilt").result({x: 0, y: 0, z: -1}),
@@ -2042,7 +1896,6 @@ pm.parser = function() {
 
     // a number can be:
     // - a constant 
-    // - a dance name
     // - a random number generator
     // - an expression combining those
     //
@@ -2101,25 +1954,6 @@ pm.parser = function() {
     //         5-11, range
     // todo how does this relate to number above?
     quantity: (r) => P.digits.map(Number),
-
-    // transformations
-    //   nudge == translate
-    //   turn == rotate
-    //   resize == scale
-    nudge: (r) => P.seqObj(
-      pm.word("nudge"),
-      r.__,
-      ["vector", r.vector]),
-
-    turn: (r) => P.seqObj(
-      pm.word("turn"),
-      r.__,
-      ["vector", r.turnVector]),
-
-    resize: (r) => P.seqObj(
-      pm.word("resize"),
-      r.__,
-      ["vector", r.resizeVector]),
 
     tileSymbol: () => P.regexp(/[^\s]/).desc("tileSymbol"),
 
@@ -2236,17 +2070,17 @@ pm.parser = function() {
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.SECONDARY_COLOR})),
 
-    scaleOption: (r) => P.seqObj(
-      pm.wordList(r, "with scale"),
+    sizeOption: (r) => P.seqObj(
+      pm.wordList(r, "with size"),
       r.__,
-      ["scale", r.number],
+      ["size", r.sizeVector],
       ["switch", r.optWhenSwitch]
-    ).map(x => Object.assign(x, {type: pm.option.SCALE})), 
+    ).map(x => Object.assign(x, {type: pm.option.SIZE})), 
 
     turnOption: (r) => P.seqObj(
       pm.wordList(r, "with turn"),
       r.__,
-      ["vector", r.vector],
+      ["vector", r.turnVector],
       ["switch", r.optWhenSwitch]
     ).map(x => Object.assign(x, {type: pm.option.TURN})), 
 
@@ -2337,14 +2171,14 @@ pm.parser = function() {
       r.colorOption,
       r.patternOption,
       r.imageOption,
-      r.scaleOption,
+      r.sizeOption,
       r.turnOption,
       r.nudgeOption,
       r.nameOption,
       r.anchorOption),
 
     anchorFeatureOption: (r) => P.alt(
-      r.scaleOption,
+      r.sizeOption,
       r.anchorOption,
       r.nameOption,
       r.nudgeOption
@@ -2397,6 +2231,13 @@ pm.parser = function() {
       ["options", optionParser(r, r.meshOption)]
     ).map(x => new pm.MeshFeature(x.geometry, x.switch, x.options)),
 
+    danceFeature: (r) => P.seqObj(
+      pm.word("dance"),
+      r.__,
+      ["name", r.quotedString],
+      ["switch", r.optWhenSwitch]
+    ).map(x => new pm.DanceFeature(x.name, x.switch)),
+
     anchorFeature: (r) => P.seqObj(
       pm.word("anchor"),
       ["switch", r.optWhenSwitch],
@@ -2411,6 +2252,7 @@ pm.parser = function() {
     feature: (r) => r.article
       .then(P.alt(
         r.meshFeature,
+        r.danceFeature,
         r.chatFeature,
         r.itemFeature,
         r.lightFeature,
@@ -2643,11 +2485,11 @@ pm.parser = function() {
     ),
 
     poseTransition: (r) => P.seqObj(
-      pm.wordList(r, "to pose"),
+      pm.wordList(r, "to"),
       r.__,
       ["name", r.quotedString],
       r.__,
-      pm.word("in"),
+      pm.word("for"),
       r.__,
       ["duration", r.number],
       r.__,
@@ -2658,18 +2500,50 @@ pm.parser = function() {
       r.pose, r.poseTransition
     ),
 
+    danceLoopOptions: (r) => P.alt(
+      pm.wordList(r, "back and forth forever").result("ping-pong"),
+      pm.word("loop").result("loop")
+    ),
+
     danceBlock: (r) => P.seqObj(
       pm.wordList(r, "dance named"),
       r.__,
       ["name", r.quotedString],
       r.__,
       ["steps", r.poseOrTransition.sepBy(r.__)],
+      ["looping", r.__.then(r.danceLoopOptions).fallback("none")],
       r.__,
       r.endBlock
     ).node("danceBlock"),
 
-    posePiece: (r) => P.seqObj(
-      P.alt(pm.word("nudge"))
+    posePieceTurn: (r) => P.seqObj(
+      pm.word("turn"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      ["vector", r.turnVector])
+    .map(x => Object.assign(x, {type: "turn"})),
+
+    posePieceNudge: (r) => P.seqObj(
+      pm.word("nudge"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      ["vector", r.vector])
+    .map(x => Object.assign(x, {type: "nudge"})),
+
+    posePieceSize: (r) => P.seqObj(
+      pm.word("size"),
+      r.__,
+      ["name", r.quotedString],
+      r.__,
+      ["vector", r.sizeVector])
+    .map(x => Object.assign(x, {type: "size"})),
+
+    posePiece: (r) => P.alt(
+      r.posePieceNudge,
+      r.posePieceTurn,
+      r.posePieceSize
     ),
 
     poseBlock: (r) => P.seqObj(
