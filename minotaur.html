@@ -32,9 +32,10 @@ bugs:
 (tempo 140)
 
 map named "start"
-######
+#    #
 #*1M #
-######
+#    #
+
 end
 
 key
@@ -60,16 +61,19 @@ about "minotaur"
     with size 1/8
     with color #00ff00
     with nudge down 1/4
-    with pattern "zags" 16x1
+    with pattern "zags" 1x1
 
   and a ball named "head"
     with size 1/8
-    with nudge up 1/4 left sway
+    with nudge up 1/3
+    with nudge up sway at 1/2 speed
+    with nudge left sway at 3 speed right 1/4
+    with nudge back sway at 1/3 speed forward sway at 1/12 speed
     with pattern "zags" 1x1
     with color #ff0000
 
   and a ball named "belly"
-    with size 1/6
+    with size 1/12
     with pattern "zags" 1x3
     with color #0000ff
 
@@ -338,13 +342,13 @@ let log = console.log;
 // --------------------------------------------------------------
 pm.option = {
   ANCHOR: Symbol("anchor"),
+  BONES: Symbol("bones"),
   COLOR: Symbol("color"),
   DISTANCE: Symbol("distance"),
   GEOMETRY: Symbol("geometry"),
   GREETING: Symbol("greeting"),
   IMAGE: Symbol("image"),
   INTENSITY: Symbol("intensity"),
-  LIMB: Symbol("limb"),
   NAME: Symbol("name"),
   NUDGE: Symbol("nudge"),
   PATTERN: Symbol("pattern"),
@@ -402,7 +406,7 @@ pm.mesh = {
 
 pm.number = {
   DICE: Symbol("dice number"),
-  DANCE: Symbol("dance number"),
+  DANCE: Symbol("dancing number"),
   CONSTANT: Symbol("constant number")
 };
 
@@ -420,7 +424,6 @@ pm.isVector = function(num) {
   return ("dir" in num && "magnitude");
 }
 
-pm._cachedVec = null;
 pm.snapBoneToObject = function(bone, obj) {
   if (pm._cachedVec === null)
     pm._cachedVec = new THREE.Vector3();
@@ -804,13 +807,13 @@ pm.MeshFeature.prototype.build = function(tile) {
   }
 
   // nudge
-  let nudge = maze.getOption(this, pm.option.NUDGE);
   let mesh = this.mesh;
-  if (nudge !== undefined) {
+
+  let nudges = maze.getOptions(this, pm.option.NUDGE);
+  for (let nudge of nudges) {
     if (pm.hasAnimation(nudge.vector)) {
       tile.addAnimation(pm.property.POSITION, mesh, nudge.vector);
     } else {
-      log("no animation in", nudge.vector);
       let vec = pm.flattenVec(nudge.vector);
       mesh.position.set(vec.x, vec.y, vec.z);
     }
@@ -1142,47 +1145,66 @@ pm.SkeletonFeature.prototype.build = function(tile) {
   let maze = tile.map.maze; 
   let feature = this;
 
-  let limbs = this.options.filter(x => x.type === pm.option.LIMB);
+  let bonesOptions = this.options.filter(x => x.type === pm.option.BONES);
 
   log("building skeleton");
-
-  // TODO 
-  // - build the bones
-  // - scan through the hierarchy (this should run after mesh feature build)
-  // - attach the objects to the bones
-
-  /*
   let ik = new THREE.IK();
-  let chain = new THREE.IKChain();
+  tile.iks.push(ik);
   let constraints = [new THREE.IKBallConstraint(90)]
   let bones = [];
 
-  for (let c of connections) {
-    let parentObj = tile.getObjByName(c.parent);
-    let childObj = tile.getObjByName(c.name);
+  let vec = new THREE.Vector3;
+  for (let i=0; i<bonesOptions.length; i++) {
+    let boneChain = bonesOptions[i];
+    let target = new THREE.Object3D();
+    let indicator = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    indicator.material.depthTest = false;
+    target.add(indicator);
+    target.name = "";
+    maze.scene.add(target);
+    let originalObjForHandle = null;
 
-    let childBone = new THREE.Bone();
-    childBone.name = "bone-" + childObj.name;
-    pm.snapBoneToObject(childBone, childObj);
+    let chain = new THREE.IKChain();
+    let parentObj = null;
 
-    let parentBone = tile.getObjByName("bone-" + parentObj.name);
-    if (parentBone === undefined) {
-      parentBone = new THREE.Bone();
-      parentBone.name = "bone-" + parentObj.name;
+    let prevBone = null;
+    for (let j=0; j<boneChain.chain.length; j++) {
+      let objName = boneChain.chain[j];
+      let obj = tile.getObjByName(objName);
+      let bone = new THREE.Bone();
+      bone.name = "_bone-" + objName;
+      pm.snapBoneToObject(bone, obj);
 
-      pm.snapBoneToObject(parentBone, parentObj);
+      if (prevBone != null) 
+        prevBone.add(bone);
 
-      bones.push(parentBone);
+      bones.push(bone);
+      prevBone = bone;
+
+      if (j == boneChain.chain.length-1) {
+        chain.add(new THREE.IKJoint(bone, { constraints }), { target });
+        originalObjForHandle = obj;
+        obj.getWorldPosition(vec);
+        target.position.copy(vec.position);
+        target.rotation.set(obj.rotation);
+        target.name = "_target-" + obj.name;
+        log("added target", target, "for obj", originalObjForHandle);
+      } else {
+        chain.add(new THREE.IKJoint(bone, { constraints }));
+      }
+
+      log("added", bone.name, "to chain");
     }
 
-    parentBone.add(childBone);
-    bones.push(childBone);
-    pm.snapBoneToObject(childBone, childObj);
+    ik.add(chain);
+
+    tile.ikHandles.push({original: originalObjForHandle, target: target});
   }
 
-  // add the root bone to the ik
-  //tile.root.add(this.skeleton);
-  */
+  tile.root.add(ik.getRootBone());
+
+  // make any existing animated properties use the ik handle instead of the mesh.
+  tile.updateAnimationTargets();
 };
 
 pm.SkeletonFeature.prototype.destroy = function() {
@@ -1261,9 +1283,18 @@ pm.Dance.prototype.getBlankData = function() {
 pm.AnimatedProperty = function(propType, target) {
   this.driverData = [];
   this.propType = propType;
-  this.target = target;
-  this.updateRestValue();
   this.mods = [];
+  this.target = target;
+
+  this.updateRestValue();
+};
+
+pm.AnimatedProperty.prototype.updateTarget = function(tile) {
+  let handle = tile.ikHandles.find(x => x.original == this.target);
+  log("all handles", tile.ikHandles);
+  if (handle !== undefined) {
+    this.target = handle.target;
+  } 
 };
 
 pm.AnimatedProperty.prototype.addDriver = function() {
@@ -1273,8 +1304,7 @@ pm.AnimatedProperty.prototype.addDriver = function() {
 };
 
 pm.AnimatedProperty.prototype.updateRestValue = function() {
-  // set this from the target object's current state, depending on proptype
-
+  log(this.target);
   switch (this.propType) {
     case pm.property.COLOR:
       let color = this.target.mat.color;
@@ -1313,6 +1343,11 @@ pm.AnimatedProperty.prototype.update = function() {
   for (let m of this.mods) 
     m.update();
 
+  if (this.target.position === undefined) {
+    pm.liveMaze.stop();
+    log("target", this.target);
+    console.trace("undefined target");
+  };
   let x,y,z;
   switch (this.propType) {
     case pm.property.COLOR:
@@ -1359,6 +1394,8 @@ pm.Tile = function(tileSymbol, tileName, x, y, featureList, map) {
   this.q = [];
   this.objCache = {};
   this.animatedProperties = [];
+  this.ikHandles = [];
+  this.iks = [];
 };
 
 pm.Tile.prototype.hasFeature = function(FeatureType) {
@@ -1474,7 +1511,7 @@ pm.Tile.prototype.applyDanceData = function(data) {
 pm.Tile.prototype.addAnimation = function(propType, target, num) {
   let ap = this.animatedProperties.find(x => x.target == target && x.propType == propType);
   if (ap == undefined) {
-    ap = new pm.AnimatedProperty(propType, target);
+    ap = new pm.AnimatedProperty(propType, target, this);
     this.animatedProperties.push(ap);
   }
   
@@ -1486,6 +1523,14 @@ pm.Tile.prototype.addAnimation = function(propType, target, num) {
 pm.Tile.prototype.update = function() {
   for (let ap of this.animatedProperties) 
     ap.update();
+
+  for (let ik of this.iks) 
+    ik.solve();
+};
+
+pm.Tile.prototype.updateAnimationTargets = function() {
+  for (let ap of this.animatedProperties) 
+    ap.updateTarget(this);
 };
 
 // Modulator; a number that varies with time
@@ -1520,7 +1565,20 @@ pm.Modulator.prototype.flatten = function(num, period) {
     if (numCopy.magnitude.type == pm.number.DANCE) {
       // todo other types of dance; right now it's just sway
       if (numCopy.magnitude.danceName == "sway") {
-        numCopy.magnitude = Math.sin(period * Math.PI)/2;
+        let speed = 1;
+        let intensity = 1;
+        // todo -- options might be dancing numbers too ...
+
+        let speedOptions = numCopy.magnitude.options.filter(x => x.speed != undefined);
+        if (speedOptions.length > 0)
+          speed = speedOptions.map(x => x.speed.value).reduce((a,b) => a*b);
+
+        let intensityOptions = numCopy.magnitude.options.filter(x => x.intensity != undefined);
+        if (intensityOptions.length > 0)
+          intensity = intensityOptions.map(x => x.intensity.value).reduce((a,b) => a*b);
+
+        //pm.liveMaze.stop();
+        numCopy.magnitude = Math.sin(period * speed * Math.PI * 2) * (intensity/4);
       }
     } else if (numCopy.magnitude.type == pm.number.CONSTANT) {
       numCopy.magnitude = numCopy.magnitude.value;
@@ -1549,12 +1607,12 @@ pm.Modulator.prototype.flatten = function(num, period) {
 pm.Modulator.prototype.update = function() {
   let time = this.lastUpdate - this.start;
 
-  /*
-  let beatlen = (60000 / pm.tempo);
+  let beatlen = (60000 / pm.tempo) * 4;
   let period = (time % beatlen) / beatlen;
-  */
+  /*
   let x = 1000;
   let period = (time % x) / x;
+  */
 
   // update the data here
   let f = this.flatten(this.num, period);
@@ -1684,6 +1742,10 @@ pm.Maze.prototype.getOption = function(feature, optionSymbol) {
                                    this.checkSwitch(x.switch, true));
 };
 
+pm.Maze.prototype.getOptions = function(feature, optionSymbol) {
+  return feature.options.filter(x => x.type === optionSymbol &&
+                                   this.checkSwitch(x.switch, true));
+};
 // todo you should be able to set and change the tempo; for now it's 
 // hardcoded
 pm.Maze.prototype.beatsToMs = function(beats) {
@@ -2315,8 +2377,42 @@ pm.parser = function() {
     // todo: change speed+intensity
     // todo: more types
     dancingNumber: (r) => P.seqObj(
-      ["danceName", P.alt(pm.word("sway"))],
+      ["danceName", pm.word("sway")],
+      ["options", r.__.then(r.dancingNumberOptions).fallback(null)]
     ).map(x => Object.assign(x, {type: pm.number.DANCE})),
+
+    joiningWords: (r) => P.alt(
+      pm.word("and"), 
+      pm.word("with"), 
+      pm.word("up"), 
+      pm.word("left"), 
+      pm.word("down")
+    ),
+
+    // test: testParseDancingNumberOptions
+    dancingNumberOptions: (r) => 
+    P.notFollowedBy(r.joiningWords)
+    .then(
+    P.alt(
+      r.dancingNumberSpeed,
+      r.dancingNumberIntensity
+    ).sepBy(r.__)),
+
+    dancingNumberSpeed: (r) => P.seqObj(
+      pm.word("at"),
+      r.__,
+      ["speed", r.number],
+      r.__,
+      pm.word("speed")
+    ),
+
+    dancingNumberIntensity: (r) => P.seqObj(
+      pm.word("at"),
+      r.__,
+      ["intensity", r.number],
+      r.__,
+      pm.word("intensity")
+    ),
 
     // a number can be:
     // - a constant 
@@ -2611,17 +2707,17 @@ pm.parser = function() {
       r.nudgeOption
     ),
 
-    limbChain: (r) => r.quotedString
+    boneChain: (r) => r.quotedString
       .sepBy(P.seq(r.__, pm.word("to"), r.__)),
 
-    limbOption: (r) => P.seqObj(
+    bonesOption: (r) => P.seqObj(
       pm.word("with bones"),
       r.__,
-      ["chain", r.limbChain]
-    ).map(x => Object.assign(x, {type: pm.option.BONE})),
+      ["chain", r.boneChain]
+    ).map(x => Object.assign(x, {type: pm.option.BONES})),
 
     skeletonOption: (r) => P.alt(
-      r.limbOption
+      r.bonesOption
     ),
 
     geometryName: (r) => P.alt(
@@ -3152,6 +3248,11 @@ pm.parser = function() {
         let v = p.tryParse(code);
       },
 
+      "testParseDancingNumberOptions": function() {
+        let p = pm.parser().dancingNumberOptions;
+        let v = p.tryParse("at 1/2 speed");
+      },
+
       "testParseMaze": function() {
         let code = `
           key
@@ -3200,12 +3301,13 @@ pm.parser = function() {
 
         v = pm.flattenVec(p.tryParse("up 1 up 1 up 1"));
         eq(v.y, 3);
+
+        v = p.tryParse("left sway up 1");
       },
 
       "testParseNumber": function() {
         let p = pm.parser().number;
-        let v = p.tryParse("sway");
-        log("parse sway", v);
+        let v = p.tryParse("sway at 1/2 speed");
 
         //eq(p.tryParse("1", 1));
       },
